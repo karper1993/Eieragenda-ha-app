@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p /data
+DB_DIR="/share/eieragenda"
+DB_FILE="${DB_DIR}/eieragenda.db"
+OLD_DB="/data/eieragenda.db"
 
-RESTORE_FROM_SHARE="false"
-if [ -f /data/options.json ]; then
-  RESTORE_FROM_SHARE="$(jq -r '.restore_from_share // false' /data/options.json)"
+mkdir -p "${DB_DIR}"
+
+# Eenmalige migratie: als er nog geen database in /share staat,
+# maar er staat nog een oude add-on database in /data, neem die dan mee.
+if [ ! -f "${DB_FILE}" ] && [ -f "${OLD_DB}" ]; then
+  echo "[Eieragenda] Oude database gevonden in ${OLD_DB}; kopieer naar ${DB_FILE}..."
+  cp "${OLD_DB}" "${DB_FILE}"
 fi
 
-if [ "${RESTORE_FROM_SHARE}" = "true" ] && [ ! -f /data/eieragenda.db ] && [ -f /share/eieragenda.db ]; then
-  echo "[Eieragenda] Bestaande database gevonden in /share/eieragenda.db. Kopieer naar /data/eieragenda.db..."
-  cp /share/eieragenda.db /data/eieragenda.db
-fi
+export EIERAGENDA_DB_PATH="${DB_FILE}"
 
-if [ -f /data/eieragenda.db ]; then
-  echo "[Eieragenda] Database: /data/eieragenda.db"
+if [ -f "${DB_FILE}" ]; then
+  echo "[Eieragenda] Database: ${DB_FILE}"
 else
-  echo "[Eieragenda] Geen database gevonden; nieuwe database wordt aangemaakt."
+  echo "[Eieragenda] Geen database gevonden; nieuwe database wordt aangemaakt op ${DB_FILE}."
 fi
 
 echo "[Eieragenda] Start webserver op poort ${EIERAGENDA_PORT:-8099}..."

@@ -1,6 +1,6 @@
 name: "Eieragenda"
 description: "Eieragenda voor Home Assistant"
-version: "1.0.2"
+version: "1.0.3"
 slug: "eieragenda"
 arch:
   - aarch64
@@ -27,8 +27,6 @@ map:
   - type: share
     read_only: false
 
-options:
-  restore_from_share: true
+options: {}
 
-schema:
-  restore_from_share: bool
+schema: {}

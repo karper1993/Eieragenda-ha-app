@@ -14,3 +14,6 @@ unzip Eieragenda_v47_ingress.zip
 cp -r Eieragenda_v47_ingress/* ~/Eieragenda/
 sudo systemctl start eieragenda
 sudo systemctl status eieragenda
+
+
+Databasepad: `/share/eieragenda/eieragenda.db`

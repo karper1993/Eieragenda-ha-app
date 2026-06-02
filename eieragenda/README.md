@@ -18,3 +18,6 @@ Eieragenda als echte Home Assistant add-on met Ingress.
 4. Alleen als `/data/eieragenda.db` nog niet bestaat, wordt `/share/eieragenda.db` automatisch gekopieerd.
 
 Daarna kun je `restore_from_share` eventueel uitzetten.
+
+
+Databasepad: `/share/eieragenda/eieragenda.db`

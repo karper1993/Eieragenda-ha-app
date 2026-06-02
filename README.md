@@ -22,3 +22,6 @@ Wil je je oude database overzetten, zet dan je bestaande `eieragenda.db` eerst i
 ## Belangrijk
 
 Deze add-on is gemaakt op basis van de laatste stabiele v47-basis van de Eieragenda, niet op basis van de experimentele v49/v50 mobiele zoekaanpassingen.
+
+
+Databasepad: `/share/eieragenda/eieragenda.db`
