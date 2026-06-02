@@ -1,0 +1,181 @@
+
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div>
+    <h1>Eieragenda</h1>
+  </div>
+  <div class="hero-actions">
+    <a class="hero-link" href="{{ app_url('geschiedenis') }}">Geschiedenis</a>
+    <a class="hero-link" href="{{ app_url('klanten') }}">Klanten</a>
+    <button class="fab" onclick="openOrderModal()">+</button>
+  </div>
+</header>
+
+{% if grouped %}
+<section class="timeline">
+  {% for day in grouped %}
+  <section class="day-bubble {% if day.is_overdue %}overdue-day{% endif %}">
+    <div class="day-header">
+      <div class="day-title-block">
+        <h2>{{ day.datum_mooi }}{% if day.is_overdue %}<span class="overdue-label">Nog niet voltooid</span>{% endif %}</h2>
+        <div class="day-needed">
+          <div class="{% if day.remaining.soort1 == 0 %}zero-total{% endif %}"><span>1e soort</span><strong>{{ day.remaining.soort1 }}</strong>{% if day.remaining.soort1_stack %}<small>{{ day.remaining.soort1_stack }}</small>{% endif %}</div>
+          <div class="{% if day.remaining.soort2 == 0 %}zero-total{% endif %}"><span>2e soort</span><strong>{{ day.remaining.soort2 }}</strong>{% if day.remaining.soort2_stack %}<small>{{ day.remaining.soort2_stack }}</small>{% endif %}</div>
+          <div class="{% if day.remaining.dubbeldooiers == 0 %}zero-total{% endif %}"><span>Dubbel</span><strong>{{ day.remaining.dubbeldooiers }}</strong>{% if day.remaining.dubbeldooiers_stack %}<small>{{ day.remaining.dubbeldooiers_stack }}</small>{% endif %}</div>
+        </div>
+      </div>
+      <span class="day-count">{{ day.remaining.aantal }} open</span>
+    </div>
+
+    <div class="order-list inside-day">
+      {% for b in day.orders %}
+      <article class="order-card {% if b.verwerkt %}completed{% endif %}">
+        <div class="order-main">
+          <div class="time-badge {% if b.time_label == 'Tijd niet bekend' %}no-time{% endif %}">{{ b.time_label }}</div>
+          <div class="order-info">
+            <div class="order-title-row">
+              <div class="customer-stack">
+                <button class="customer-name" type="button"
+                  onclick="showCustomerDetails('{{ b.klant_naam|e }}', '{{ b.telefoon|default('', true)|e }}', '{{ b.adres|default('', true)|e }}', '{{ b.email|default('', true)|e }}')">
+                  {{ b.klant_naam }}
+                </button>
+                {% if b.adres or b.telefoon %}<span class="customer-line">{% if b.adres %}{{ b.adres }}{% endif %}{% if b.adres and b.telefoon %} · {% endif %}{% if b.telefoon %}<a href="tel:{{ b.telefoon }}" class="phone customer-phone">{{ b.telefoon }}</a>{% endif %}</span>{% endif %}
+              </div>
+              <a href="{{ app_url('bestelling_bewerken', id=b.id) }}" class="tiny-link">Bewerk</a>
+            </div>
+            <p>
+              {% if b.factuur %}<span class="pay pay-mail">Factuur mailen</span>{% endif %}
+              {% if b.factuur_meegeven %}{% if b.factuur %} · {% endif %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
+              {% if b.contant %}{% if b.factuur or b.factuur_meegeven %} · {% endif %}<span class="pay pay-cash">Contant</span>{% endif %}
+              {% if b.pinnen %}{% if b.factuur or b.factuur_meegeven or b.contant %} · {% endif %}<span class="pay pay-card">Pinnen</span>{% endif %}
+            </p>
+          </div>
+        </div>
+
+        <div class="product-row">
+          {% if b.soort1 %}<span class="product warm">1e soort <b>{{ b.soort1 }}</b>{% if b.soort1_stack %}<small>{{ b.soort1_stack }}</small>{% endif %}</span>{% endif %}
+          {% if b.soort2 %}<span class="product cool">2e soort <b>{{ b.soort2 }}</b>{% if b.soort2_stack %}<small>{{ b.soort2_stack }}</small>{% endif %}</span>{% endif %}
+          {% if b.dubbeldooiers %}<span class="product green">Dubbel <b>{{ b.dubbeldooiers }}</b>{% if b.dubbeldooiers_stack %}<small>{{ b.dubbeldooiers_stack }}</small>{% endif %}</span>{% endif %}
+        </div>
+
+        {% if b.opmerking %}<div class="remark">{{ b.opmerking }}</div>{% endif %}
+        <form method="post" action="{{ app_url('toggle_verwerkt', id=b.id) }}" class="status-form">
+          <button type="submit" class="status-btn {{ 'on' if b.verwerkt else '' }}" data-on="Voltooid ✓" data-off="Voltooien">
+            <small>Aangemaakt: {{ b.aangemaakt_mooi }}</small>
+            {% if b.verwerkt %}
+              <span>Voltooid ✓</span>
+              {% if b.voltooid_mooi %}<small>Voltooid: {{ b.voltooid_mooi }}</small>{% endif %}
+            {% else %}
+              <span>Voltooien</span>
+            {% endif %}
+          </button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</section>
+{% else %}
+<article class="empty-state">
+  <div>🥚</div>
+  <h3>Geen toekomstige bestellingen</h3>
+  <p>Druk op + om een bestelling aan te maken.</p>
+  <button onclick="openOrderModal()">Nieuwe bestelling</button>
+</article>
+{% endif %}
+
+<div class="modal" id="orderModal">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div><h2>Bestelling aanmaken</h2></div>
+      <button class="close" onclick="closeModal('orderModal')">×</button>
+    </div>
+
+    <form method="post" action="{{ app_url('bestelling_nieuw') }}" class="form order-form" onsubmit="return validateOrderForm(this)">
+      <section class="form-bubble">
+        
+        <div class="form-block">
+          <label>Klant selecteren</label>
+          <input class="customer-search-input" type="search" placeholder="Zoek klant, adres of telefoon..." oninput="filterCustomerSelect(this)">
+          <select class="customer-select" name="klant_id" onchange="toggleNewCustomer(this); updateLastOrderPreview(this)">
+            <option value="">Selecteer klant</option>
+            <option value="__new__">+ Nieuwe klant</option>
+            {% for k in klanten %}<option value="{{ k.id }}" data-search="{{ k.naam }} {{ k.adres }} {{ k.telefoon }} {{ k.email }}">{{ k.naam }}{% if k.adres %} | {{ k.adres }}{% endif %}{% if k.telefoon %} | {{ k.telefoon }}{% endif %}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="repeat-last-panel hidden">
+          <button type="button" class="secondary repeat-last-btn" onclick="repeatLastOrder(this)">Laatste bestelling herhalen</button>
+          <small class="repeat-last-summary"></small>
+        </div>
+        <div class="new-customer-block hidden nested-bubble">
+        <div class="form-block"><label>Naam</label><input name="nieuwe_klant" placeholder="Verplicht"></div>
+        <div class="form-block address-block">
+          <label>Adres</label>
+          <input class="address-input" name="adres" autocomplete="off" placeholder="Optioneel">
+          <div class="address-suggestions"></div>
+        </div>
+        <div class="form-block"><label>Mailadres</label><input type="email" name="email" placeholder="Optioneel"></div>
+        <div class="form-block"><label>Telefoonnummer</label><input name="telefoon" placeholder="Optioneel"></div>
+      </div>
+    </section>
+
+      <section class="form-bubble">
+        <h3>Aantal eieren</h3>
+        <div class="form-grid three">
+          <div class="form-block amount-box amount-soort1"><label>1e soort</label><input class="egg-input" type="number" name="soort1" min="0" inputmode="numeric" value="0" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)"><small class="stack-label"></small></div>
+          <div class="form-block amount-box amount-soort2"><label>2e soort</label><input class="egg-input" type="number" name="soort2" min="0" inputmode="numeric" value="0" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)"><small class="stack-label"></small></div>
+          <div class="form-block amount-box amount-dubbel"><label>Dubbel</label><input class="egg-input" type="number" name="dubbeldooiers" min="0" inputmode="numeric" value="0" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)"><small class="stack-label"></small></div>
+        </div>
+      </section>
+
+      <section class="form-bubble">
+        
+        <div class="form-block"><label>Datum</label><input type="date" name="ophaal_datum" value="{{ today }}" min="{{ today }}"></div>
+        <div class="form-block">
+          <label>Tijd</label>
+          <div class="choice-row time-choice three-choices">
+            <label><input type="radio" name="tijd_type" value="none" checked onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
+            <label><input type="radio" name="tijd_type" value="exact" onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
+            <label><input type="radio" name="tijd_type" value="range" onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+          </div>
+        </div>
+        <div class="time-panel time-exact hidden"><label>Exacte tijd</label><input type="time" name="tijd_van"></div>
+        <div class="time-panel time-range hidden"><div class="form-grid two"><div><label>Vanaf</label><input type="time" name="tijd_van_range"></div><div><label>Tot</label><input type="time" name="tijd_tot_range"></div></div></div>
+      </section>
+
+      <section class="form-bubble">
+        
+        <div class="form-block">
+      <label>Betaling</label>
+      <div class="form-grid two payment-grid">
+        <label class="invoice-toggle"><input type="checkbox" name="factuur"><span>Factuur mailen</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="factuur_meegeven"><span>Factuur meegeven</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="contant"><span>Contant</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="pinnen"><span>Pinnen</span></label>
+      </div>
+    </div>
+        <div class="form-block"><label>Opmerking</label><input name="opmerking" placeholder=""></div>
+      </section>
+
+      <button class="primary" type="submit">Bestelling plaatsen</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="customerModal">
+  <div class="modal-card small-modal">
+    <div class="modal-top">
+      <div><h2 id="customerModalName">Klant</h2></div>
+      <button class="close" onclick="closeModal('customerModal')">×</button>
+    </div>
+    <div class="customer-detail-box">
+      <p id="customerModalAddress"></p>
+      <p id="customerModalEmail"></p>
+      <p id="customerModalPhone"></p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

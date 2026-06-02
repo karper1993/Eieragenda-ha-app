@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div>
+    <h1>Bewerken</h1>
+  </div>
+  <a class="hero-link" href="{{ app_url('index') }}">Terug</a>
+</header>
+
+<section class="editing-current-customer">
+  <div>
+    <span>Je bewerkt nu:</span>
+    <strong>{{ bestelling.klant_naam }}</strong>
+    {% if bestelling.adres %}<small>{{ bestelling.adres }}</small>{% endif %}
+    {% if bestelling.telefoon %}<small>{{ bestelling.telefoon }}</small>{% endif %}
+  </div>
+</section>
+
+<section class="edit-card">
+  <form method="post" class="form order-form" onsubmit="return validateOrderForm(this)">
+    <section class="form-bubble">
+      <h3>Klant</h3>
+      <div class="form-block">
+        <label>Klant selecteren</label>
+        <input class="customer-search-input" type="search" placeholder="Zoek klant, adres of telefoon..." oninput="filterCustomerSelect(this)">
+        <select class="customer-select" name="klant_id" onchange="toggleNewCustomer(this)">
+          <option value="">Selecteer klant</option>
+          <option value="__new__">+ Nieuwe klant</option>
+          {% for k in klanten %}
+            <option value="{{ k.id }}" {% if k.id == bestelling.klant_id %}selected{% endif %} data-search="{{ k.naam }} {{ k.adres }} {{ k.telefoon }} {{ k.email }}">{{ k.naam }}{% if k.adres %} | {{ k.adres }}{% endif %}{% if k.telefoon %} | {{ k.telefoon }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="new-customer-block hidden nested-bubble">
+        <div class="form-block"><label>Naam</label><input name="nieuwe_klant" placeholder="Verplicht"></div>
+        <div class="form-block address-block">
+          <label>Adres</label>
+          <input class="address-input" name="adres" autocomplete="off" placeholder="Optioneel">
+          <div class="address-suggestions"></div>
+        </div>
+        <div class="form-block"><label>Mailadres</label><input type="email" name="email" placeholder="Optioneel"></div>
+        <div class="form-block"><label>Telefoonnummer</label><input name="telefoon" placeholder="Optioneel"></div>
+      </div>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Aantal eieren</h3>
+      <div class="form-grid three">
+        <div class="form-block amount-box amount-soort1">
+          <label>1e soort</label>
+          <input class="egg-input" type="number" name="soort1" min="0" value="{{ bestelling.soort1 }}" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)">
+          <small class="stack-label"></small>
+        </div>
+        <div class="form-block amount-box amount-soort2">
+          <label>2e soort</label>
+          <input class="egg-input" type="number" name="soort2" min="0" value="{{ bestelling.soort2 }}" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)">
+          <small class="stack-label"></small>
+        </div>
+        <div class="form-block amount-box amount-dubbel">
+          <label>Dubbel</label>
+          <input class="egg-input" type="number" name="dubbeldooiers" min="0" value="{{ bestelling.dubbeldooiers }}" onfocus="selectAllOnFocus(this)" oninput="updateStacks(this)">
+          <small class="stack-label"></small>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Datum / tijd</h3>
+      <div class="form-block">
+        <label>Datum</label>
+        <input type="date" name="ophaal_datum" value="{{ bestelling.ophaal_datum }}">
+      </div>
+
+      <div class="form-block">
+        <label>Tijd</label>
+        <div class="choice-row time-choice three-choices">
+          <label><input type="radio" name="tijd_type" value="none" {% if bestelling.tijd_type == 'none' or bestelling.tijd_type == 'manual' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
+          <label><input type="radio" name="tijd_type" value="exact" {% if bestelling.tijd_type == 'exact' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
+          <label><input type="radio" name="tijd_type" value="range" {% if bestelling.tijd_type == 'range' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+        </div>
+      </div>
+
+      <div class="time-panel time-exact {% if bestelling.tijd_type != 'exact' %}hidden{% endif %}">
+        <label>Exacte tijd</label>
+        <input type="time" name="tijd_van" value="{{ bestelling.tijd_van }}">
+      </div>
+
+      <div class="time-panel time-range {% if bestelling.tijd_type != 'range' %}hidden{% endif %}">
+        <div class="form-grid two">
+          <div><label>Vanaf</label><input type="time" name="tijd_van_range" value="{{ bestelling.tijd_van }}"></div>
+          <div><label>Tot</label><input type="time" name="tijd_tot_range" value="{{ bestelling.tijd_tot }}"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Betaling / status</h3>
+      <div class="form-grid two payment-grid">
+        <label class="invoice-toggle"><input type="checkbox" name="factuur" {% if bestelling.factuur %}checked{% endif %}><span>Factuur mailen</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="factuur_meegeven" {% if bestelling.factuur_meegeven %}checked{% endif %}><span>Factuur meegeven</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="contant" {% if bestelling.contant %}checked{% endif %}><span>Contant</span></label>
+        <label class="invoice-toggle"><input type="checkbox" name="pinnen" {% if bestelling.pinnen %}checked{% endif %}><span>Pinnen</span></label>
+      </div>
+      <div class="form-grid two">
+        <label class="invoice-toggle processed">
+          <input type="checkbox" name="verwerkt" {% if bestelling.verwerkt %}checked{% endif %}>
+          <span>Voltooid</span>
+        </label>
+      </div>
+
+      <div class="form-block">
+        <label>Opmerking</label>
+        <input name="opmerking" value="{{ bestelling.opmerking }}">
+      </div>
+    </section>
+
+    <button class="primary" type="submit">Bestelling opslaan</button>
+  </form>
+
+  <form method="post" action="{{ app_url('bestelling_verwijderen', id=bestelling.id) }}" onsubmit="return confirm('Bestelling verwijderen?')">
+    <button class="danger" type="submit">Bestelling verwijderen</button>
+  </form>
+</section>
+{% endblock %}

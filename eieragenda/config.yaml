@@ -1,0 +1,35 @@
+name: "Eieragenda"
+description: "Eieragenda voor Home Assistant"
+version: "1.0.2"
+slug: "eieragenda"
+url: ""
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: services
+boot: auto
+init: false
+stage: experimental
+backup: cold
+
+# Echte Home Assistant Ingress. Geen iframe en geen hass_ingress rewrite-regels nodig.
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:egg
+panel_title: Eieragenda
+panel_admin: false
+
+# Geen externe poort publiceren; alleen via Home Assistant Ingress.
+ports: {}
+
+map:
+  - type: share
+    read_only: false
+
+options:
+  restore_from_share: true
+
+schema:
+  restore_from_share: bool

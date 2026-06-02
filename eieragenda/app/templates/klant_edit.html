@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div>
+    <h1>{% if klant %}Klant bewerken{% else %}Nieuwe klant{% endif %}</h1>
+  </div>
+  <a class="hero-link" href="{{ app_url('klanten') }}">Terug</a>
+</header>
+
+<section class="edit-card">
+  <form method="post" class="form">
+    <div class="form-block"><label>Naam</label><input name="naam" value="{{ klant.naam if klant else '' }}" required placeholder="Verplicht"></div>
+    <div class="form-block address-block">
+      <label>Adres</label>
+      <input class="address-input" name="adres" value="{{ klant.adres if klant else '' }}" autocomplete="off" placeholder="Optioneel">
+      <div class="address-suggestions"></div>
+    </div>
+    <div class="form-block"><label>Mailadres</label><input type="email" name="email" value="{{ klant.email if klant else '' }}" placeholder="Optioneel"></div>
+    <div class="form-block"><label>Telefoonnummer</label><input name="telefoon" value="{{ klant.telefoon if klant else '' }}" placeholder="Optioneel"></div>
+    <button class="primary" type="submit">Opslaan</button>
+  </form>
+</section>
+{% endblock %}

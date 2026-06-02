@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div><h1>Klanten</h1></div>
+  <a class="hero-link" href="{{ app_url('index') }}">Terug</a>
+</header>
+
+<section class="edit-card">
+  <div class="customer-actions">
+    <form method="get" class="search-form">
+      <input name="q" value="{{ q }}" placeholder="Zoek klant of telefoonnummer">
+      {% if show_hidden %}<input type="hidden" name="verborgen" value="1">{% endif %}
+    </form>
+    <a href="{{ app_url('klant_nieuw') }}" class="primary as-link">+ Nieuwe klant</a>
+    {% if show_hidden %}
+      <a href="{{ app_url('klanten') }}" class="secondary as-link">Alleen actief</a>
+    {% else %}
+      <a href="{{ app_url('klanten', verborgen='1') }}" class="secondary as-link">Verborgen tonen</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="order-list">
+  {% for k in klanten %}
+  <article class="customer-card {% if not k.actief %}completed{% endif %}">
+    <div>
+      <h3>{{ k.naam }}</h3>
+      <p>{% if k.adres or k.telefoon %}{% if k.adres %}{{ k.adres }}{% endif %}{% if k.adres and k.telefoon %} · {% endif %}{% if k.telefoon %}{{ k.telefoon }}{% endif %}{% endif %}{% if not k.actief %}{% if k.adres or k.telefoon %}<br>{% endif %}verborgen{% endif %}</p>
+    </div>
+    <div class="customer-buttons">
+      <a class="tiny-link repeat-customer-link" href="./?repeat_customer_id={{ k.id }}">Herhaal laatste</a>
+      <a class="tiny-link" href="{{ app_url('klant_bewerken', id=k.id) }}">Bewerk</a>
+      {% if k.actief %}
+      <form method="post" action="{{ app_url('klant_verbergen', id=k.id) }}" onsubmit="return confirm('Klant verbergen? Bestaande bestellingen blijven zichtbaar.')">
+        <button class="tiny-button" type="submit">Verberg</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ app_url('klant_herstellen', id=k.id) }}">
+        <button class="tiny-button restore" type="submit">Herstel</button>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  {% else %}
+  <article class="empty-state"><div>🔎</div><h3>Geen klanten gevonden</h3></article>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,98 @@
+
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div>
+    <h1>Geschiedenis</h1>
+  </div>
+  <a class="hero-link" href="{{ app_url('index') }}">Terug</a>
+</header>
+
+<section class="edit-card history-search-card">
+  <form method="get" class="history-search">
+    <div class="form-block">
+      <label>Zoeken</label>
+      <input name="q" value="{{ q|default('') }}" placeholder="Klant, telefoon, adres of opmerking">
+    </div>
+    <div class="form-block">
+      <label>Datum</label>
+      <input type="date" name="datum" value="{{ datum|default('') }}">
+    </div>
+    <button class="primary" type="submit">Zoeken</button>
+    {% if q or datum %}
+      <a class="secondary as-link" href="{{ app_url('geschiedenis') }}">Wissen</a>
+    {% endif %}
+  </form>
+</section>
+
+{% if grouped %}
+<section class="timeline">
+  {% for day in grouped %}
+  <section class="day-bubble history-bubble">
+    <div class="day-header">
+      <div class="day-title-block">
+        <h2>{{ day.datum_mooi }}</h2>
+      </div>
+      <span class="day-count">{{ day.orders|length }} regels</span>
+    </div>
+
+    <div class="order-list inside-day">
+      {% for b in day.orders %}
+      <article class="order-card {% if b.verwerkt %}completed{% endif %}">
+        <div class="order-main">
+          <div class="time-badge {% if b.time_label == 'Tijd niet bekend' %}no-time{% endif %}">{{ b.time_label }}</div>
+          <div class="order-info">
+            <div class="order-title-row">
+              <div class="customer-stack">
+                <button class="customer-name" type="button"
+                  onclick="showCustomerDetails('{{ b.klant_naam|e }}', '{{ b.telefoon|default('', true)|e }}', '{{ b.adres|default('', true)|e }}', '{{ b.email|default('', true)|e }}')">
+                  {{ b.klant_naam }}
+                </button>
+                {% if b.adres or b.telefoon %}<span class="customer-line">{% if b.adres %}{{ b.adres }}{% endif %}{% if b.adres and b.telefoon %} · {% endif %}{% if b.telefoon %}<a href="tel:{{ b.telefoon }}" class="phone customer-phone">{{ b.telefoon }}</a>{% endif %}</span>{% endif %}
+              </div>
+              <a href="{{ app_url('bestelling_bewerken', id=b.id) }}" class="tiny-link">Bewerk</a>
+            </div>
+            <p>
+              {% if b.factuur %}<span class="pay pay-mail">Factuur mailen</span>{% endif %}
+              {% if b.factuur_meegeven %}{% if b.factuur %} · {% endif %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
+              {% if b.contant %}{% if b.factuur or b.factuur_meegeven %} · {% endif %}<span class="pay pay-cash">Contant</span>{% endif %}
+              {% if b.pinnen %}{% if b.factuur or b.factuur_meegeven or b.contant %} · {% endif %}<span class="pay pay-card">Pinnen</span>{% endif %}
+            </p>
+          </div>
+        </div>
+        <div class="product-row">
+          {% if b.soort1 %}<span class="product warm">1e soort <b>{{ b.soort1 }}</b>{% if b.soort1_stack %}<small>{{ b.soort1_stack }}</small>{% endif %}</span>{% endif %}
+          {% if b.soort2 %}<span class="product cool">2e soort <b>{{ b.soort2 }}</b>{% if b.soort2_stack %}<small>{{ b.soort2_stack }}</small>{% endif %}</span>{% endif %}
+          {% if b.dubbeldooiers %}<span class="product green">Dubbel <b>{{ b.dubbeldooiers }}</b>{% if b.dubbeldooiers_stack %}<small>{{ b.dubbeldooiers_stack }}</small>{% endif %}</span>{% endif %}
+        </div>
+        {% if b.opmerking %}<div class="remark">{{ b.opmerking }}</div>{% endif %}
+        <div class="order-meta">Aangemaakt: {{ b.aangemaakt_mooi }}{% if b.voltooid_mooi %} · Voltooid: {{ b.voltooid_mooi }}{% endif %}</div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</section>
+{% else %}
+<article class="empty-state">
+  <div>🕘</div>
+  <h3>Geen geschiedenis</h3>
+  <p>Er zijn nog geen bestellingen opgeslagen.</p>
+</article>
+{% endif %}
+
+<div class="modal" id="customerModal">
+  <div class="modal-card small-modal">
+    <div class="modal-top">
+      <div><span class="eyebrow">Klant</span><h2 id="customerModalName">Klant</h2></div>
+      <button class="close" onclick="closeModal('customerModal')">×</button>
+    </div>
+    <div class="customer-detail-box">
+      <p id="customerModalAddress"></p>
+      <p id="customerModalEmail"></p>
+      <p id="customerModalPhone"></p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
