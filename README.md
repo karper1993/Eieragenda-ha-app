@@ -6,22 +6,29 @@ De add-on draait de Eieragenda als echte Home Assistant add-on met Ingress. Daar
 
 ## Installatie via GitHub
 
-1. Maak een nieuwe GitHub repository, bijvoorbeeld `eieragenda-ha-addon`.
-2. Upload de inhoud van deze map naar die repository.
-3. Ga in Home Assistant naar **Instellingen → Add-ons → Add-onwinkel → ⋮ → Repositories**.
-4. Voeg de GitHub URL toe.
-5. Installeer de add-on **Eieragenda**.
-6. Start de add-on en zet **Toon in zijbalk** aan.
+1. Upload de inhoud van deze map naar je GitHub repository.
+2. Ga in Home Assistant naar **Instellingen → Add-ons → Add-onwinkel → ⋮ → Repositories**.
+3. Voeg de GitHub URL toe.
+4. Installeer of update de add-on **Eieragenda**.
+5. Start de add-on en zet **Toon in zijbalk** aan.
 
-## Database overzetten
+## Database en app-bestanden
 
-De database staat in de add-on op `/data/eieragenda.db` en gaat mee met Home Assistant backups.
+Deze versie gebruikt deze paden:
 
-Wil je je oude database overzetten, zet dan je bestaande `eieragenda.db` eerst in de Home Assistant `/share` map. Als de optie `restore_from_share` aan staat en er nog geen database in de add-on bestaat, kopieert de add-on automatisch `/share/eieragenda.db` naar `/data/eieragenda.db` bij de eerste start.
+```text
+/share/eieragenda/eieragenda.db
+/share/eieragenda/app/
+```
+
+Bij de eerste start kopieert de add-on de ingebouwde app-bestanden automatisch naar:
+
+```text
+/share/eieragenda/app/
+```
+
+Daarna kun je kleine aanpassingen doen door bestanden in die map te vervangen en de add-on opnieuw te starten. Voor gewone webapp-aanpassingen hoef je dan niet steeds GitHub te updaten.
 
 ## Belangrijk
 
-Deze add-on is gemaakt op basis van de laatste stabiele v47-basis van de Eieragenda, niet op basis van de experimentele v49/v50 mobiele zoekaanpassingen.
-
-
-Databasepad: `/share/eieragenda/eieragenda.db`
+Deze add-on is gemaakt op basis van de stabiele v47-basis van de Eieragenda, niet op basis van de experimentele v49/v50 mobiele zoekaanpassingen.

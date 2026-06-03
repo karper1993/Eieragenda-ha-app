@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 APP_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("EIERAGENDA_DB_PATH", APP_DIR / "eieragenda.db"))
-APP_VERSION = "v47-addon-1.0.3-share-db"
+APP_VERSION = "v47-addon-1.0.4-share-app"
 
 app = Flask(__name__)
 
