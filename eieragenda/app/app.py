@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 
 APP_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("EIERAGENDA_DB_PATH", APP_DIR / "eieragenda.db"))
-APP_VERSION = "v47-addon-1.0.5-ha-notificatie"
+APP_VERSION = "v47-addon-v10-webhook-schoon"
 HA_NOTIFY_ENTITY = os.environ.get("EIERAGENDA_HA_NOTIFY_ENTITY", "input_text.eieragenda_notificatie")
 
 app = Flask(__name__)
@@ -238,47 +238,62 @@ def fetch_order_for_notification(conn, order_id):
     """, (order_id,)).fetchone()
 
 
-def set_ha_input_text(value):
-    token = os.environ.get("SUPERVISOR_TOKEN", "")
-    if not token:
-        print("[Eieragenda] Geen SUPERVISOR_TOKEN beschikbaar; Home Assistant melding overgeslagen.", flush=True)
-        return
+def post_ha_webhook(value):
+    """Fallback zonder SUPERVISOR_TOKEN.
 
+    Maak in Home Assistant een automation met webhook_id: eieragenda_notificatie.
+    Die automation zet input_text.eieragenda_notificatie.
+    """
+    webhook_id = os.environ.get("EIERAGENDA_HA_WEBHOOK_ID", "eieragenda_notificatie")
     payload = json.dumps({
+        "message": value,
         "entity_id": HA_NOTIFY_ENTITY,
-        "value": value,
     }).encode("utf-8")
 
-    req = urllib.request.Request(
-        "http://supervisor/core/api/services/input_text/set_value",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    # Probeer meerdere interne HA adressen. De eerste die werkt is genoeg.
+    urls = [
+        f"http://supervisor/core/api/webhook/{webhook_id}",
+        f"http://homeassistant.local:8123/api/webhook/{webhook_id}",
+        f"http://homeassistant:8123/api/webhook/{webhook_id}",
+        f"http://172.30.32.1:8123/api/webhook/{webhook_id}",
+    ]
 
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            resp.read()
-        print(f"[Eieragenda] HA notificatie gezet: {value}", flush=True)
-    except urllib.error.HTTPError as e:
+    last_error = None
+    for url in urls:
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
-            body = e.read().decode("utf-8", errors="replace")
-        except Exception:
-            body = ""
-        print(f"[Eieragenda] HA notificatie mislukt: HTTP {e.code} {body}", flush=True)
-    except Exception as e:
-        print(f"[Eieragenda] HA notificatie mislukt: {e}", flush=True)
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                resp.read()
+            print(f"[Eieragenda] HA webhook notificatie verzonden via {url}: {value}", flush=True)
+            return True
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                body = ""
+            last_error = f"HTTP {e.code} bij {url} {body}"
+        except Exception as e:
+            last_error = f"{url}: {e}"
 
+    print(f"[Eieragenda] HA webhook notificatie mislukt: {last_error}", flush=True)
+    return False
+
+
+def send_ha_notification(value):
+    # Alleen webhook gebruiken; geen SUPERVISOR_TOKEN of directe HA API meer.
+    post_ha_webhook(value)
 
 def notify_order_event(conn, kind, order_id):
     row = fetch_order_for_notification(conn, order_id)
     if not row:
         print(f"[Eieragenda] Geen bestelling gevonden voor notificatie: {order_id}", flush=True)
         return
-    set_ha_input_text(build_notification_message(kind, row))
+    send_ha_notification(build_notification_message(kind, row))
 
 def time_sort_sql():
     return """

@@ -1,6 +1,6 @@
 name: "Eieragenda"
 description: "Eieragenda voor Home Assistant"
-version: "1.0.6"
+version: "1.0.7"
 slug: "eieragenda"
 arch:
   - aarch64
@@ -11,9 +11,6 @@ boot: auto
 init: false
 stage: experimental
 backup: cold
-hassio_api: true
-hassio_role: default
-homeassistant_api: true
 
 # Echte Home Assistant Ingress. Geen iframe en geen hass_ingress rewrite-regels nodig.
 ingress: true
@@ -30,8 +27,6 @@ map:
   - type: share
     read_only: false
 
-options:
-  notification_entity: "input_text.eieragenda_notificatie"
+options: {}
 
-schema:
-  notification_entity: str
+schema: {}
