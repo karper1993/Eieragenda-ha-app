@@ -39,3 +39,8 @@ De database staat hier:
 ```
 
 Stop de add-on voordat je de database handmatig bewerkt.
+
+
+## Home Assistant notificatie
+
+Deze versie kan bij nieuwe, gewijzigde en voltooide bestellingen `input_text.eieragenda_notificatie` bijwerken. Maak deze helper eerst aan in Home Assistant.

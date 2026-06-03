@@ -32,3 +32,8 @@ Daarna kun je kleine aanpassingen doen door bestanden in die map te vervangen en
 ## Belangrijk
 
 Deze add-on is gemaakt op basis van de stabiele v47-basis van de Eieragenda, niet op basis van de experimentele v49/v50 mobiele zoekaanpassingen.
+
+
+## Home Assistant notificatie
+
+Deze versie kan bij nieuwe, gewijzigde en voltooide bestellingen `input_text.eieragenda_notificatie` bijwerken. Maak deze helper eerst aan in Home Assistant.

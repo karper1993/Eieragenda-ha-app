@@ -34,6 +34,15 @@ fi
 
 export EIERAGENDA_DB_PATH="${DB_FILE}"
 
+NOTIFICATION_ENTITY="input_text.eieragenda_notificatie"
+if [ -f /data/options.json ]; then
+  CONFIGURED_ENTITY=$(jq -r '.notification_entity // ""' /data/options.json)
+  if [ -n "${CONFIGURED_ENTITY}" ] && [ "${CONFIGURED_ENTITY}" != "null" ]; then
+    NOTIFICATION_ENTITY="${CONFIGURED_ENTITY}"
+  fi
+fi
+export EIERAGENDA_HA_NOTIFY_ENTITY="${NOTIFICATION_ENTITY}"
+
 if [ -f "${DB_FILE}" ]; then
   echo "[Eieragenda] Database: ${DB_FILE}"
 else
@@ -41,6 +50,7 @@ else
 fi
 
 echo "[Eieragenda] App-map: ${APP_DIR}"
+echo "[Eieragenda] HA notificatie helper: ${EIERAGENDA_HA_NOTIFY_ENTITY}"
 echo "[Eieragenda] Start webserver op poort ${EIERAGENDA_PORT:-8099}..."
 cd "${APP_DIR}"
 exec python3 "${APP_DIR}/app.py"

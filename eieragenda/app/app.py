@@ -1,12 +1,16 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
 import os
+import json
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import date, datetime, timedelta
 
 APP_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("EIERAGENDA_DB_PATH", APP_DIR / "eieragenda.db"))
-APP_VERSION = "v47-addon-1.0.4-share-app"
+APP_VERSION = "v47-addon-1.0.5-ha-notificatie"
+HA_NOTIFY_ENTITY = os.environ.get("EIERAGENDA_HA_NOTIFY_ENTITY", "input_text.eieragenda_notificatie")
 
 app = Flask(__name__)
 
@@ -186,6 +190,96 @@ def time_label(row):
         return extra
     return "Tijd niet bekend"
 
+
+def compact_date(value):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d-%m-%Y")
+    except Exception:
+        return value or ""
+
+
+def notification_amounts(row):
+    parts = []
+    try:
+        s1 = int(row["soort1"] or 0)
+        s2 = int(row["soort2"] or 0)
+        dd = int(row["dubbeldooiers"] or 0)
+    except Exception:
+        s1 = s2 = dd = 0
+    if s1:
+        parts.append(f"{s1} 1e soort")
+    if s2:
+        parts.append(f"{s2} 2e soort")
+    if dd:
+        parts.append(f"{dd} dubbeldooiers")
+    return " + ".join(parts) if parts else "geen eieren"
+
+
+def build_notification_message(kind, row):
+    naam = (row["klant_naam"] or "Onbekende klant").strip()
+    adres = (row["adres"] or "").strip()
+    klant = f"{naam} - {adres}" if adres else naam
+    aantallen = notification_amounts(row)
+    datum = compact_date(row["ophaal_datum"])
+    tijd = time_label(row)
+    # Tijdstip achteraan zodat Home Assistant altijd een nieuwe state ziet, ook bij twee gelijke meldingen.
+    msg = f"{kind} | {klant} | {aantallen} | {datum} | {tijd} | #{row['id']} | {datetime.now().strftime('%H:%M:%S')}"
+    if len(msg) > 255:
+        msg = msg[:252] + "..."
+    return msg
+
+
+def fetch_order_for_notification(conn, order_id):
+    return conn.execute("""
+        SELECT b.*, k.naam AS klant_naam, k.telefoon, k.email, k.adres
+        FROM bestellingen b
+        JOIN klanten k ON k.id = b.klant_id
+        WHERE b.id=?
+    """, (order_id,)).fetchone()
+
+
+def set_ha_input_text(value):
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not token:
+        print("[Eieragenda] Geen SUPERVISOR_TOKEN beschikbaar; Home Assistant melding overgeslagen.", flush=True)
+        return
+
+    payload = json.dumps({
+        "entity_id": HA_NOTIFY_ENTITY,
+        "value": value,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "http://supervisor/core/api/services/input_text/set_value",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()
+        print(f"[Eieragenda] HA notificatie gezet: {value}", flush=True)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        print(f"[Eieragenda] HA notificatie mislukt: HTTP {e.code} {body}", flush=True)
+    except Exception as e:
+        print(f"[Eieragenda] HA notificatie mislukt: {e}", flush=True)
+
+
+def notify_order_event(conn, kind, order_id):
+    row = fetch_order_for_notification(conn, order_id)
+    if not row:
+        print(f"[Eieragenda] Geen bestelling gevonden voor notificatie: {order_id}", flush=True)
+        return
+    set_ha_input_text(build_notification_message(kind, row))
+
 def time_sort_sql():
     return """
     CASE
@@ -358,6 +452,8 @@ def bestelling_nieuw():
             1 if request.form.get("contant") == "on" else 0,
             request.form.get("opmerking", "").strip(), now, now
         ))
+        new_order_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        notify_order_event(conn, "Nieuwe bestelling", new_order_id)
     return redirect(app_url("index"))
 
 @app.route("/bestelling/<int:id>/bewerken", methods=["GET", "POST"])
@@ -380,7 +476,8 @@ def bestelling_bewerken(id):
                 tijd_tot = ""
 
             verwerkt = 1 if request.form.get("verwerkt") == "on" else 0
-            current = conn.execute("SELECT voltooid_op FROM bestellingen WHERE id=?", (id,)).fetchone()
+            current = conn.execute("SELECT verwerkt, voltooid_op FROM bestellingen WHERE id=?", (id,)).fetchone()
+            current_verwerkt = int(current["verwerkt"] or 0) if current and "verwerkt" in current.keys() else 0
             current_voltooid = current["voltooid_op"] if current and "voltooid_op" in current.keys() else ""
 
             if verwerkt and not current_voltooid:
@@ -389,6 +486,8 @@ def bestelling_bewerken(id):
                 voltooid_op = ""
             else:
                 voltooid_op = current_voltooid
+
+            notification_kind = "Bestelling voltooid" if verwerkt and not current_verwerkt else "Bestelling gewijzigd"
 
             conn.execute("""
                 UPDATE bestellingen
@@ -416,6 +515,7 @@ def bestelling_bewerken(id):
                 now,
                 id
             ))
+            notify_order_event(conn, notification_kind, id)
             return redirect(app_url("index"))
 
         bestelling = conn.execute("""
@@ -441,6 +541,7 @@ def toggle_verwerkt(id):
         now = now_iso()
         voltooid_op = now if new else ""
         conn.execute("UPDATE bestellingen SET verwerkt=?, voltooid_op=?, bijgewerkt_op=? WHERE id=?", (new, voltooid_op, now, id))
+        notify_order_event(conn, "Bestelling voltooid" if new else "Bestelling gewijzigd", id)
 
     # Op de overzichtspagina gebruiken we bewust een gewone POST-formulierknop.
     # Dat werkt betrouwbaarder in de Home Assistant mobiele app / Ingress WebView dan onclick + fetch.

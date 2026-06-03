@@ -17,3 +17,8 @@ sudo systemctl status eieragenda
 
 
 Databasepad: `/share/eieragenda/eieragenda.db`
+
+
+## Home Assistant notificatie
+
+Deze versie kan bij nieuwe, gewijzigde en voltooide bestellingen `input_text.eieragenda_notificatie` bijwerken. Maak deze helper eerst aan in Home Assistant.
