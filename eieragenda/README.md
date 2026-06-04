@@ -1,3 +1,7 @@
 # Eieragenda
 
-Add-on basis. De actieve app staat na eerste start in `/share/eieragenda/app/`.
+Versie 1.0.8
+
+- Start via Gunicorn als dit beschikbaar is
+- `/share/eieragenda/app` blijft de actieve app-map
+- `/share/eieragenda/eieragenda.db` blijft de database

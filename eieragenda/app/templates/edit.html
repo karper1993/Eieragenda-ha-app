@@ -65,53 +65,78 @@
       </div>
     </section>
 
-    <section class="form-bubble">
-      <h3>Datum / tijd</h3>
-      <div class="form-block">
-        <label>Datum</label>
-        <input type="date" name="ophaal_datum" value="{{ bestelling.ophaal_datum }}">
-      </div>
-
-      <div class="form-block">
-        <label>Tijd</label>
-        <div class="choice-row time-choice three-choices">
-          <label><input type="radio" name="tijd_type" value="none" {% if bestelling.tijd_type == 'none' or bestelling.tijd_type == 'manual' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
-          <label><input type="radio" name="tijd_type" value="exact" {% if bestelling.tijd_type == 'exact' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
-          <label><input type="radio" name="tijd_type" value="range" {% if bestelling.tijd_type == 'range' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+    <section class="form-bubble price-mode-section">
+      <h3>Prijs</h3>
+      <div class="price-direct-box {% if bestelling.vaste_prijs_actief %}is-fixed{% endif %}">
+        <label class="invoice-toggle fixed-price-toggle-row">
+          <input type="checkbox" name="vaste_prijs_actief" class="price-direct-toggle" {% if bestelling.vaste_prijs_actief %}checked{% endif %} onclick="eieragendaSyncFixedPrice(this.form)" onchange="eieragendaSyncFixedPrice(this.form)">
+          <span>Vaste prijs per ei</span>
+        </label>
+        <div class="form-block price-direct-panel">
+          <label>Vaste prijs per ei (€)</label>
+          <input type="text" name="vaste_prijs_per_ei" inputmode="decimal" value="{{ ('%.3f'|format(bestelling.vaste_prijs_per_ei or 0)).replace('.', ',') if bestelling.vaste_prijs_actief else '' }}" placeholder="Bijv. 0,20" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9,.]/g,'')">
         </div>
       </div>
-
-      <div class="time-panel time-exact {% if bestelling.tijd_type != 'exact' %}hidden{% endif %}">
-        <label>Exacte tijd</label>
-        <input type="time" name="tijd_van" value="{{ bestelling.tijd_van }}">
-      </div>
-
-      <div class="time-panel time-range {% if bestelling.tijd_type != 'range' %}hidden{% endif %}">
-        <div class="form-grid two">
-          <div><label>Vanaf</label><input type="time" name="tijd_van_range" value="{{ bestelling.tijd_van }}"></div>
-          <div><label>Tot</label><input type="time" name="tijd_tot_range" value="{{ bestelling.tijd_tot }}"></div>
-        </div>
+      <small class="price-help">Automatisch volgens eierprijs lijst</small>
+      <div class="order-price-preview">
+        <span>Totaal te betalen</span>
+        <strong class="order-price-total">{{ bestelling.prijs_totaal_mooi|default('€ 0,00') }}</strong>
       </div>
     </section>
 
     <section class="form-bubble">
-      <h3>Betaling / status</h3>
+      <h3>Betaling</h3>
       <div class="form-grid two payment-grid">
         <label class="invoice-toggle"><input type="checkbox" name="factuur" {% if bestelling.factuur %}checked{% endif %}><span>Factuur mailen</span></label>
         <label class="invoice-toggle"><input type="checkbox" name="factuur_meegeven" {% if bestelling.factuur_meegeven %}checked{% endif %}><span>Factuur meegeven</span></label>
         <label class="invoice-toggle"><input type="checkbox" name="contant" {% if bestelling.contant %}checked{% endif %}><span>Contant</span></label>
         <label class="invoice-toggle"><input type="checkbox" name="pinnen" {% if bestelling.pinnen %}checked{% endif %}><span>Pinnen</span></label>
       </div>
-      <div class="form-grid two">
-        <label class="invoice-toggle processed">
-          <input type="checkbox" name="verwerkt" {% if bestelling.verwerkt %}checked{% endif %}>
-          <span>Voltooid</span>
-        </label>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Datum en tijd</h3>
+      <div class="date-time-grid">
+        <div class="form-block">
+          <label>Datum</label>
+          <input type="date" name="ophaal_datum" value="{{ bestelling.ophaal_datum }}" aria-label="Datum">
+        </div>
+        <div class="form-block">
+          <label>Tijd</label>
+          <div class="choice-row time-choice three-choices">
+            <label><input type="radio" name="tijd_type" value="none" {% if bestelling.tijd_type == 'none' or bestelling.tijd_type == 'manual' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
+            <label><input type="radio" name="tijd_type" value="exact" {% if bestelling.tijd_type == 'exact' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
+            <label><input type="radio" name="tijd_type" value="range" {% if bestelling.tijd_type == 'range' %}checked{% endif %} onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+          </div>
+        </div>
       </div>
 
+      <div class="time-panel time-exact {% if bestelling.tijd_type != 'exact' %}hidden{% endif %}">
+        <input type="time" name="tijd_van" value="{{ bestelling.tijd_van }}" aria-label="Exacte tijd">
+      </div>
+
+      <div class="time-panel time-range {% if bestelling.tijd_type != 'range' %}hidden{% endif %}">
+        <div class="form-grid two">
+          <div><input type="time" name="tijd_van_range" value="{{ bestelling.tijd_van }}" aria-label="Vanaf"></div>
+          <div><input type="time" name="tijd_tot_range" value="{{ bestelling.tijd_tot }}" aria-label="Tot"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Opmerking</h3>
       <div class="form-block">
-        <label>Opmerking</label>
-        <input name="opmerking" value="{{ bestelling.opmerking }}">
+        <input name="opmerking" value="{{ bestelling.opmerking }}" placeholder="Opmerking" aria-label="Opmerking">
+      </div>
+    </section>
+
+    <section class="form-bubble">
+      <h3>Status</h3>
+      <div class="form-block status-wide-block">
+        <label class="invoice-toggle processed status-wide-toggle">
+          <input type="checkbox" name="verwerkt" {% if bestelling.verwerkt %}checked{% endif %}>
+          <span>{% if bestelling.verwerkt %}Bestelling heractiveren{% else %}Bestelling voltooien{% endif %}</span>
+        </label>
       </div>
     </section>
 

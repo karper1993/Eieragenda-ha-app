@@ -574,8 +574,8 @@ body.is-scrolled .fab{
 }
 
 @media(max-width:620px){
-  .hero,
-  body.is-scrolled .hero{
+  body.page-agenda .hero,
+  body.page-agenda.is-scrolled .hero{
     min-height:108px !important;
     padding:18px !important;
     border-radius:28px !important;
@@ -593,8 +593,8 @@ body.is-scrolled .fab{
     visibility:hidden;
   }
 
-  .hero-actions,
-  body.is-scrolled .hero-actions{
+  body.page-agenda .hero-actions,
+  body.page-agenda.is-scrolled .hero-actions{
     max-width:160px !important;
   }
 
@@ -610,8 +610,8 @@ body.is-scrolled .fab{
   }
 
   /* + knop blijft stabiel */
-  .fab,
-  body.is-scrolled .fab{
+  body.page-agenda .fab,
+  body.page-agenda.is-scrolled .fab{
     width:64px !important;
     height:64px !important;
     font-size:42px !important;
@@ -754,8 +754,8 @@ body.is-scrolled .day-count{
     transition:opacity .12s ease;
   }
 
-  .hero-actions,
-  body.is-scrolled .hero-actions{
+  body.page-agenda .hero-actions,
+  body.page-agenda.is-scrolled .hero-actions{
     max-width:160px !important;
   }
 
@@ -2061,4 +2061,794 @@ a,
   background:#ede9fe !important;
   color:#5b21b6 !important;
   border-color:#c4b5fd !important;
+}
+
+/* v13 prijzen */
+.price-line{
+  margin-top:7px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  color:var(--muted);
+  font-weight:900;
+}
+.price-line strong{
+  color:#1f5130;
+  background:#dfeeda;
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:17px;
+}
+.price-line small{
+  color:#6f6254;
+  font-weight:850;
+}
+.day-count small{
+  display:block;
+  margin-top:3px;
+  font-size:12px;
+  opacity:.8;
+}
+.price-mode-section .price-help{
+  color:var(--muted);
+  font-weight:800;
+}
+.fixed-price-panel input:disabled{
+  opacity:.55;
+}
+.price-result{
+  margin-top:14px;
+  background:linear-gradient(145deg,#fff8ea,#f0e3ca);
+  border:1px solid rgba(32,21,12,.08);
+  border-radius:24px;
+  padding:14px;
+}
+.price-result h3{
+  margin:0 0 12px;
+  font-size:28px;
+  letter-spacing:-.04em;
+}
+.price-result-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.price-result-item{
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(32,21,12,.08);
+  border-radius:18px;
+  padding:11px;
+}
+.price-result-item span,.price-result-item small{
+  display:block;
+  color:var(--muted);
+  font-weight:900;
+}
+.price-result-item strong{
+  display:block;
+  font-size:26px;
+}
+.price-error{
+  background:rgba(185,85,67,.10);
+  border-color:rgba(185,85,67,.22);
+}
+.price-table-wrap{
+  overflow:auto;
+  border-radius:20px;
+  background:rgba(255,255,255,.58);
+  border:1px solid rgba(32,21,12,.08);
+}
+.price-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:15px;
+}
+.price-table th,.price-table td{
+  padding:10px 12px;
+  border-bottom:1px solid rgba(32,21,12,.08);
+  text-align:right;
+}
+.price-table th:first-child,.price-table td:first-child{
+  text-align:left;
+}
+.price-table th{
+  background:#f0e3ca;
+  color:#3a2818;
+  font-weight:950;
+  position:sticky;
+  top:0;
+}
+.price-table tr:last-child td{border-bottom:0}
+.small-empty{min-height:140px;margin-top:0}
+@media(max-width:620px){
+  .price-result-grid{grid-template-columns:1fr}
+  .price-table{font-size:14px}
+  .price-table th,.price-table td{padding:9px 10px}
+}
+
+/* v15-aanpassingen: overzicht, prijsregel, mobiele titel en vaste-prijs-paneel */
+.payment-line{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top:5px !important;
+}
+.pay-or{
+  color:var(--muted);
+  font-weight:950;
+  font-size:12px;
+  line-height:1.2;
+  margin:2px -1px 0;
+}
+.price-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border-radius:999px;
+  padding:5px 10px;
+  background:#dfeeda;
+  color:#1f5130;
+  font-weight:950;
+  line-height:1.2;
+  margin-top:2px;
+}
+.price-pill strong{
+  font-size:15px;
+}
+.price-pill small{
+  color:#45633f;
+  font-weight:900;
+  font-size:12px;
+}
+.day-count{
+  display:inline-flex !important;
+  align-items:center;
+  gap:5px;
+}
+.day-count small{
+  display:inline !important;
+  margin-top:0 !important;
+}
+.fixed-price-panel:not(.hidden){
+  display:block !important;
+}
+.fixed-price-panel:not(.hidden) input{
+  display:block !important;
+  width:100%;
+}
+
+@media(max-width:620px){
+  body.page-agenda .hero,
+  body.page-agenda.is-scrolled .hero{
+    min-height:auto !important;
+    padding:12px !important;
+    border-radius:22px !important;
+    display:grid !important;
+    grid-template-columns:1fr auto;
+    grid-template-areas:
+      "title plus"
+      "links links";
+    align-items:center !important;
+    gap:8px 10px;
+  }
+  body.page-agenda .hero > div:first-child{
+    grid-area:title;
+    min-width:0;
+  }
+  body.page-agenda .hero h1,
+  body.page-agenda.is-scrolled .hero h1{
+    font-size:32px !important;
+    line-height:1 !important;
+  }
+  body.page-agenda .hero-actions,
+  body.page-agenda.is-scrolled .hero-actions{
+    grid-area:links;
+    width:100% !important;
+    max-width:none !important;
+    display:flex !important;
+    justify-content:flex-end !important;
+    align-items:center !important;
+    gap:6px !important;
+    flex-wrap:nowrap !important;
+  }
+  body.page-agenda .hero-actions .hero-link,
+  body.page-agenda.is-scrolled .hero-actions .hero-link{
+    display:inline-flex !important;
+    opacity:1 !important;
+    visibility:visible !important;
+    pointer-events:auto !important;
+    padding:8px 9px !important;
+    border-radius:13px !important;
+    font-size:12px !important;
+    white-space:nowrap;
+  }
+  body.page-agenda .fab,
+  body.page-agenda.is-scrolled .fab{
+    grid-area:plus;
+    position:static !important;
+    width:50px !important;
+    height:50px !important;
+    border-radius:17px !important;
+    font-size:33px !important;
+    line-height:1 !important;
+  }
+  .day-header,
+  body.is-scrolled .day-header{
+    top:112px !important;
+  }
+  .payment-line{
+    gap:5px;
+  }
+  .price-pill{
+    padding:5px 8px;
+  }
+}
+
+/* v16: mobielere header, prijs-schakelaar en automatische prijzen */
+.agenda-hero{
+  display:grid !important;
+  grid-template-columns:1fr auto auto;
+  grid-template-areas:"title plus links";
+  align-items:center !important;
+  gap:12px !important;
+}
+.agenda-hero .hero-title{grid-area:title;min-width:0}
+.agenda-hero .fab{grid-area:plus;position:static !important}
+.agenda-hero .hero-actions{grid-area:links}
+
+.price-switch{
+  width:100%;
+  border:1px solid rgba(32,21,12,.13);
+  border-radius:18px;
+  padding:14px 15px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  background:#e5ded2;
+  color:#695e52;
+  font:inherit;
+  font-weight:950;
+  text-align:center;
+  cursor:pointer;
+}
+.price-switch.active{
+  background:linear-gradient(145deg,#668b61,#3f663f);
+  color:white;
+}
+.price-switch-dot{
+  width:18px;
+  height:18px;
+  border-radius:999px;
+  background:rgba(105,94,82,.35);
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.45);
+}
+.price-switch.active .price-switch-dot{
+  background:#f3d37a;
+}
+.fixed-price-panel:not(.hidden){
+  display:grid !important;
+}
+.date-time-grid{
+  align-items:start;
+}
+.price-calc-card .primary{display:none}
+.price-calc-card .price-help{display:block;margin-top:4px;color:var(--muted);font-weight:850}
+
+@media(max-width:620px){
+  body.page-agenda .hero.agenda-hero,
+  body.page-agenda.is-scrolled .hero.agenda-hero{
+    min-height:82px !important;
+    padding:10px 12px !important;
+    border-radius:20px !important;
+    grid-template-columns:1fr auto !important;
+    grid-template-areas:
+      "title plus"
+      "links links" !important;
+    gap:5px 8px !important;
+  }
+  body.page-agenda .hero.agenda-hero h1,
+  body.page-agenda.is-scrolled .hero.agenda-hero h1{
+    font-size:27px !important;
+    line-height:1 !important;
+    transform:none !important;
+  }
+  body.page-agenda .hero.agenda-hero .fab,
+  body.page-agenda.is-scrolled .hero.agenda-hero .fab{
+    grid-area:plus !important;
+    position:static !important;
+    width:44px !important;
+    height:44px !important;
+    min-width:44px !important;
+    border-radius:15px !important;
+    font-size:30px !important;
+    line-height:1 !important;
+  }
+  body.page-agenda .hero.agenda-hero .hero-actions,
+  body.page-agenda.is-scrolled .hero.agenda-hero .hero-actions{
+    grid-area:links !important;
+    display:flex !important;
+    width:100% !important;
+    max-width:none !important;
+    justify-content:flex-end !important;
+    gap:5px !important;
+    flex-wrap:nowrap !important;
+  }
+  body.page-agenda .hero.agenda-hero .hero-actions .hero-link,
+  body.page-agenda.is-scrolled .hero.agenda-hero .hero-actions .hero-link{
+    display:inline-flex !important;
+    opacity:1 !important;
+    visibility:visible !important;
+    pointer-events:auto !important;
+    padding:7px 8px !important;
+    border-radius:12px !important;
+    font-size:11px !important;
+    white-space:nowrap !important;
+  }
+  .day-header,
+  body.is-scrolled .day-header{
+    top:92px !important;
+  }
+  .date-time-grid{
+    grid-template-columns:1fr !important;
+  }
+  .three-choices label{
+    min-width:0 !important;
+  }
+  .three-choices span{
+    padding:11px 8px !important;
+    font-size:13px;
+  }
+}
+
+/* v17: vaste prijs als echte checkbox-keuze, werkt betrouwbaarder op telefoon */
+.price-choice{
+  margin-bottom:10px;
+}
+.price-choice label{
+  width:100%;
+  justify-content:center;
+  min-height:48px;
+  border-radius:18px;
+  font-weight:950;
+}
+.price-choice label.active,
+.price-choice label:has(input:checked){
+  background:linear-gradient(145deg,#668b61,#3f663f);
+  color:#fff;
+  border-color:transparent;
+  box-shadow:0 8px 20px rgba(63,102,63,.18);
+}
+.price-choice input{
+  position:absolute;
+  opacity:0;
+  pointer-events:none;
+}
+.fixed-price-panel{
+  margin-top:8px;
+}
+
+
+/* v20: vaste prijs als gewone checkbox, paneel toont met CSS én JS */
+.fixed-price-native{
+  display:grid;
+  gap:10px;
+}
+.fixed-price-toggle-row{
+  margin:0;
+  justify-content:flex-start;
+}
+.fixed-price-toggle-row input{
+  width:22px;
+  height:22px;
+  min-width:22px;
+  accent-color:#4f7a4e;
+}
+.fixed-price-native .fixed-price-panel{
+  display:none !important;
+  margin-top:0;
+}
+.fixed-price-native.is-fixed .fixed-price-panel,
+.fixed-price-native:has(input[name="vaste_prijs_actief"]:checked) .fixed-price-panel{
+  display:block !important;
+}
+.fixed-price-native.is-fixed .fixed-price-panel input,
+.fixed-price-native:has(input[name="vaste_prijs_actief"]:checked) .fixed-price-panel input{
+  display:block !important;
+  width:100%;
+}
+
+
+/* v21: mobiele HA WebView fix - vaste prijs veld echt verbergen als uit */
+.fixed-price-native .fixed-price-panel[hidden]{
+  display:none !important;
+}
+.fixed-price-native .fixed-price-panel.is-visible{
+  display:block !important;
+}
+
+/* v22: vaste prijs paneel met unieke classes, zodat oude fixed-price CSS niet stoort */
+.price-direct-box{display:grid;gap:10px}
+.price-direct-panel{display:none!important;margin-top:0}
+.price-direct-box label:has(.price-direct-toggle:checked) ~ .price-direct-panel{display:grid!important}
+.price-direct-toggle:checked + span{background:linear-gradient(145deg,#668b61,#3f663f)!important;color:#fff!important}
+.price-direct-panel input{width:100%}
+
+/* v23: mobiele finetuning, geschiedenis en prijsregel */
+.price-pill small{
+  margin-left:4px !important;
+}
+@media(max-width:620px){
+  .price-pill{
+    gap:7px !important;
+    column-gap:7px !important;
+  }
+  .price-pill small::before{
+    content:"";
+  }
+  /* v24: de keyboard-scroll fix van v23 eruit gehaald; die liet de HA app op telefoon zijwaarts schuiven. */
+  html, body{
+    max-width:100% !important;
+    overflow-x:hidden !important;
+  }
+  .modal, .modal-card, .app-shell{
+    max-width:100vw !important;
+    box-sizing:border-box !important;
+  }
+  input, textarea, select{
+    font-size:16px !important;
+  }
+}
+
+/* v23: geschiedenis mag weer sticky dagkoppen hebben zoals het overzicht */
+body.page-history .day-header,
+body.page-history.is-scrolled .day-header{
+  position:sticky !important;
+  top:92px !important;
+  z-index:8 !important;
+  background:linear-gradient(145deg, #fbfdf5, #e6eedc) !important;
+  border-color:rgba(95,127,85,.20) !important;
+}
+body.page-history .day-bubble{
+  scroll-margin-top:130px !important;
+}
+body.page-history .history-bubble .day-header{
+  padding:10px 12px !important;
+  border-radius:22px !important;
+}
+body.page-history .history-bubble .day-header h2{
+  font-size:24px !important;
+  margin-bottom:0 !important;
+}
+@media(max-width:620px){
+  body.page-history .day-header,
+  body.page-history.is-scrolled .day-header{
+    top:84px !important;
+  }
+  body.page-history .day-bubble{
+    scroll-margin-top:112px !important;
+  }
+  body.page-history .history-bubble .day-header h2{
+    font-size:22px !important;
+  }
+}
+
+/* v26: overzicht/geschiedenis/formulier finetuning */
+/* PC: grote gele plus helemaal rechts in de titelbalk */
+.agenda-hero{
+  grid-template-columns:1fr auto auto !important;
+  grid-template-areas:"title links plus" !important;
+}
+.agenda-hero .hero-actions{grid-area:links !important; justify-content:flex-end !important;}
+.agenda-hero .fab{grid-area:plus !important; justify-self:end !important;}
+
+/* Datum bovenaan, tijdkeuzes eronder */
+.date-time-grid{
+  grid-template-columns:1fr !important;
+}
+.date-time-grid .form-block{
+  width:100%;
+}
+.date-time-grid .choice-row{
+  width:100%;
+}
+.date-time-grid .choice-row label{
+  min-width:0;
+}
+
+/* Prijsblok met live totaal */
+.order-price-preview{
+  background:linear-gradient(145deg,#fff8ea,#f0e3ca);
+  border:1px solid rgba(32,21,12,.09);
+  border-radius:20px;
+  padding:12px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.order-price-preview span{
+  color:var(--muted);
+  font-weight:900;
+}
+.order-price-preview strong{
+  font-size:24px;
+  letter-spacing:-.03em;
+}
+.order-price-preview small{
+  color:#3f663f;
+  font-weight:950;
+  background:#dfeeda;
+  border-radius:999px;
+  padding:5px 9px;
+}
+.price-help{
+  color:var(--muted) !important;
+  font-weight:850 !important;
+}
+
+/* Visuele spatie tussen bedrag en prijstype, ook in mobiele WebView */
+.price-pill{
+  gap:9px !important;
+  column-gap:9px !important;
+}
+.price-pill strong{
+  margin-right:4px !important;
+}
+.price-pill small{
+  margin-left:4px !important;
+  padding-left:2px !important;
+}
+
+/* Geschiedenis: titelbalk niet laten botsen met sticky datumkoppen */
+body.page-history .hero,
+body.page-history.is-scrolled .hero,
+body.page-history .hero.small,
+body.page-history.is-scrolled .hero.small{
+  position:relative !important;
+  top:auto !important;
+}
+body.page-history .day-header,
+body.page-history.is-scrolled .day-header{
+  position:sticky !important;
+  top:8px !important;
+  z-index:9 !important;
+  background:linear-gradient(145deg,#fff8ea,#f0e3ca) !important;
+  border:1px solid rgba(255,255,255,.85) !important;
+  box-shadow:0 8px 22px rgba(37,22,8,.10) !important;
+}
+body.page-history .day-bubble{
+  scroll-margin-top:18px !important;
+}
+
+@media(max-width:620px){
+  .agenda-hero{
+    grid-template-columns:1fr auto !important;
+    grid-template-areas:
+      "title plus"
+      "links links" !important;
+  }
+  .agenda-hero .hero-actions{grid-area:links !important;}
+  .agenda-hero .fab{grid-area:plus !important;}
+  .order-price-preview{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:5px;
+  }
+  .order-price-preview strong{
+    font-size:22px;
+  }
+  .price-pill{
+    gap:10px !important;
+    column-gap:10px !important;
+  }
+  body.page-history .day-header,
+  body.page-history.is-scrolled .day-header{
+    top:6px !important;
+    border-radius:20px !important;
+    padding:10px 12px !important;
+  }
+}
+
+
+/* v27: datum/tijd labels, status-knop, prijs-preview en geschiedenis sticky mobiel */
+.date-time-grid{
+  display:grid !important;
+  grid-template-columns:1fr !important;
+  gap:12px !important;
+}
+.date-time-grid .form-block > label{
+  display:block;
+  margin:0 0 7px;
+  color:var(--muted);
+  font-weight:950;
+}
+.date-time-grid .choice-row{
+  width:100%;
+}
+.status-wide-block{
+  width:100%;
+}
+.status-wide-toggle{
+  width:100%;
+  display:block !important;
+}
+.status-wide-toggle span{
+  width:100%;
+  justify-content:center;
+  text-align:center;
+  padding:16px 18px !important;
+}
+.order-price-preview .order-price-label{
+  display:none !important;
+}
+.order-price-preview{
+  justify-content:flex-start !important;
+}
+.order-price-preview strong{
+  margin-left:auto;
+}
+.price-pill{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:12px !important;
+  column-gap:12px !important;
+}
+.price-pill strong{
+  margin-right:6px !important;
+}
+.price-pill small{
+  margin-left:6px !important;
+  white-space:nowrap;
+}
+body.page-history .day-header,
+body.page-history.is-scrolled .day-header{
+  position:-webkit-sticky !important;
+  position:sticky !important;
+  top:8px !important;
+  z-index:30 !important;
+  transform:translateZ(0);
+}
+body.page-history .day-bubble{
+  overflow:visible !important;
+}
+@media(max-width:620px){
+  body.page-history .day-header,
+  body.page-history.is-scrolled .day-header{
+    position:-webkit-sticky !important;
+    position:sticky !important;
+    top:calc(env(safe-area-inset-top, 0px) + 6px) !important;
+    z-index:35 !important;
+    box-shadow:0 10px 24px rgba(37,22,8,.16) !important;
+  }
+  body.page-history .timeline{
+    overflow:visible !important;
+  }
+  .price-pill{
+    gap:14px !important;
+    column-gap:14px !important;
+  }
+  .price-pill strong{
+    margin-right:7px !important;
+  }
+  .price-pill small{
+    margin-left:7px !important;
+    padding-left:4px !important;
+  }
+}
+
+
+/* v28: prijsregel exact hetzelfde op pc en telefoon; geen flex-gap/margins meer die in HA WebView verschillen */
+.price-pill{
+  display:inline-block !important;
+  white-space:nowrap !important;
+  gap:0 !important;
+  column-gap:0 !important;
+  word-spacing:0 !important;
+}
+.price-pill strong,
+.price-pill small,
+.price-pill .price-gap{
+  display:inline !important;
+  margin:0 !important;
+  padding:0 !important;
+  white-space:nowrap !important;
+  vertical-align:baseline !important;
+}
+.price-pill small::before,
+.price-pill small::after{
+  content:"" !important;
+}
+@media(max-width:620px){
+  .price-pill{
+    display:inline-block !important;
+    gap:0 !important;
+    column-gap:0 !important;
+  }
+  .price-pill strong,
+  .price-pill small,
+  .price-pill .price-gap{
+    display:inline !important;
+    margin:0 !important;
+    padding:0 !important;
+  }
+}
+
+/* v31 Totalen pagina */
+.totals-filter-form{
+  display:grid;
+  grid-template-columns:1.1fr 1.2fr 1fr 1fr auto auto;
+  gap:12px;
+  align-items:end;
+}
+.totals-summary{
+  display:grid;
+  grid-template-columns:minmax(220px,.9fr) 1.4fr;
+  gap:14px;
+}
+.total-summary-main,
+.total-summary-grid > div,
+.total-period-grid > div{
+  background:rgba(255,255,255,.68);
+  border:1px solid rgba(32,21,12,.08);
+  border-radius:22px;
+  padding:14px;
+}
+.total-summary-main span,
+.total-summary-grid span,
+.total-period-grid span,
+.total-summary-main small,
+.total-period-grid small,
+.total-period-sub{
+  color:var(--muted);
+  font-weight:900;
+}
+.total-summary-main strong{
+  display:block;
+  font-size:clamp(34px,6vw,54px);
+  line-height:1;
+  letter-spacing:-.05em;
+  margin:5px 0;
+}
+.total-summary-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.total-summary-grid strong,
+.total-period-grid strong{
+  display:block;
+  font-size:30px;
+  line-height:1.05;
+  letter-spacing:-.04em;
+}
+.total-summary-grid small,
+.total-period-grid small{
+  display:block;
+  font-size:12px;
+  line-height:1.15;
+  margin-top:2px;
+}
+.total-period-sub{margin:0;font-size:14px}
+.total-period-grid{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+}
+.total-period-header .day-count{font-size:18px}
+@media(max-width:900px){
+  .totals-filter-form{grid-template-columns:1fr 1fr}
+  .totals-summary{grid-template-columns:1fr}
+  .total-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .total-period-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:620px){
+  .totals-filter-form{grid-template-columns:1fr}
+  .total-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .total-period-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .total-summary-main strong{font-size:40px}
+  .total-period-header .day-count{align-self:stretch;text-align:center}
 }

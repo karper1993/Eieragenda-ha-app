@@ -4,15 +4,45 @@ import os
 import json
 import urllib.request
 import urllib.error
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 APP_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("EIERAGENDA_DB_PATH", APP_DIR / "eieragenda.db"))
-APP_VERSION = "v47-addon-v10-webhook-schoon"
+APP_VERSION = "v35-gunicorn-sqlite-wal"
 HA_NOTIFY_ENTITY = os.environ.get("EIERAGENDA_HA_NOTIFY_ENTITY", "input_text.eieragenda_notificatie")
+PRICE_FILE = Path(os.environ.get("EIERAGENDA_PRICE_FILE", "/share/eieragenda/eierprijzen.xlsx"))
+_PRICE_CACHE = {"mtime": None, "tables": None, "error": None}
 
 app = Flask(__name__)
+
+
+def _last_sunday(year, month):
+    d = date(year, month, 31)
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+
+def _amsterdam_offset_for_utc(dt_utc):
+    # Europese zomertijd: van laatste zondag maart 01:00 UTC
+    # t/m laatste zondag oktober 01:00 UTC. Zo wisselt de Eieragenda
+    # om 00:00 Nederlandse tijd, niet om 00:00 UTC.
+    start_day = _last_sunday(dt_utc.year, 3)
+    end_day = _last_sunday(dt_utc.year, 10)
+    start = datetime(dt_utc.year, 3, start_day.day, 1, 0, tzinfo=timezone.utc)
+    end = datetime(dt_utc.year, 10, end_day.day, 1, 0, tzinfo=timezone.utc)
+    return timedelta(hours=2) if start <= dt_utc < end else timedelta(hours=1)
+
+
+def local_now():
+    dt_utc = datetime.now(timezone.utc)
+    return (dt_utc + _amsterdam_offset_for_utc(dt_utc)).replace(tzinfo=None)
+
+
+def today_date():
+    return local_now().date()
+
 
 
 def ingress_base_path():
@@ -49,29 +79,33 @@ def inject_ingress_helpers():
 
 def db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    # Timeout + busy_timeout zorgen dat korte gelijktijdige schrijfacties
+    # niet direct een "database is locked" fout geven.
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 10000")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def today_iso():
-    return date.today().isoformat()
+    return today_date().isoformat()
 
 def now_iso():
-    return datetime.now().isoformat(timespec="seconds")
+    return local_now().isoformat(timespec="seconds")
 
 def parse_date(value):
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except Exception:
-        return date.today()
+        return today_date()
 
 def pretty_date(value):
     d = parse_date(value)
     dagen = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
     maanden = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
-    if d == date.today():
+    if d == today_date():
         prefix = "Vandaag"
-    elif d == date.today() + timedelta(days=1):
+    elif d == today_date() + timedelta(days=1):
         prefix = "Morgen"
     else:
         prefix = dagen[d.weekday()].capitalize()
@@ -83,16 +117,465 @@ def pretty_datetime(value):
         return ""
     try:
         dt = datetime.fromisoformat(value)
-        if dt.date() == date.today():
+        if dt.date() == today_date():
             return "vandaag " + dt.strftime("%H:%M")
-        if dt.date() == date.today() - timedelta(days=1):
+        if dt.date() == today_date() - timedelta(days=1):
             return "gisteren " + dt.strftime("%H:%M")
         return dt.strftime("%d-%m-%Y %H:%M")
     except Exception:
         return value
 
+
+
+def parse_money(value, default=0.0):
+    if value is None:
+        return default
+    try:
+        text = str(value).strip().replace("€", "").replace(" ", "").replace(",", ".")
+        if not text:
+            return default
+        return float(text)
+    except Exception:
+        return default
+
+
+def money_text(value):
+    try:
+        return "€ " + f"{float(value):.2f}".replace(".", ",")
+    except Exception:
+        return "€ 0,00"
+
+
+def price_per_piece_text(value):
+    try:
+        return "€ " + f"{float(value):.3f}".replace(".", ",")
+    except Exception:
+        return "€ 0,000"
+
+
+def _xlsx_col_index(cell_ref):
+    letters = ""
+    for ch in cell_ref:
+        if ch.isalpha():
+            letters += ch.upper()
+        else:
+            break
+    n = 0
+    for ch in letters:
+        n = n * 26 + (ord(ch) - ord('A') + 1)
+    return max(n - 1, 0)
+
+
+def _xlsx_cell_value(cell, shared_strings):
+    ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        texts = [t.text or "" for t in cell.findall(".//a:t", ns)]
+        return "".join(texts)
+    v = cell.find("a:v", ns)
+    if v is None or v.text is None:
+        return ""
+    raw = v.text
+    if cell_type == "s":
+        try:
+            return shared_strings[int(raw)]
+        except Exception:
+            return raw
+    try:
+        if "." in raw:
+            return float(raw)
+        return int(raw)
+    except Exception:
+        return raw
+
+
+def _read_xlsx_sheet_rows(path):
+    ns = {
+        "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+    result = {}
+    with zipfile.ZipFile(path) as z:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            for si in root.findall("a:si", ns):
+                texts = [t.text or "" for t in si.findall(".//a:t", ns)]
+                shared_strings.append("".join(texts))
+
+        wb_root = ET.fromstring(z.read("xl/workbook.xml"))
+        rel_root = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+        rels = {rel.attrib.get("Id"): rel.attrib.get("Target") for rel in rel_root.findall("rel:Relationship", ns)}
+
+        for sheet in wb_root.findall("a:sheets/a:sheet", ns):
+            name = sheet.attrib.get("name", "")
+            rid = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            target = rels.get(rid)
+            if not target:
+                continue
+            sheet_path = "xl/" + target.lstrip("/")
+            sheet_path = sheet_path.replace("xl/xl/", "xl/")
+            if sheet_path not in z.namelist():
+                continue
+            sh_root = ET.fromstring(z.read(sheet_path))
+            rows = []
+            for row in sh_root.findall("a:sheetData/a:row", ns):
+                values = {}
+                max_col = -1
+                for cell in row.findall("a:c", ns):
+                    ref = cell.attrib.get("r", "A1")
+                    col = _xlsx_col_index(ref)
+                    values[col] = _xlsx_cell_value(cell, shared_strings)
+                    max_col = max(max_col, col)
+                if max_col >= 0:
+                    rows.append([values.get(i, "") for i in range(max_col + 1)])
+                else:
+                    rows.append([])
+            result[name] = rows
+    return result
+
+
+def _norm_header(value):
+    return str(value or "").strip().lower().replace("é", "e")
+
+
+def _num(value):
+    if value is None or value == "":
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            return float(value)
+        return float(str(value).strip().replace("€", "").replace(" ", "").replace(",", "."))
+    except Exception:
+        return None
+
+
+def _extract_price_table(rows, sheet_name):
+    header_row = None
+    aantal_col = prijs_col = pps_col = None
+
+    for ri, row in enumerate(rows[:12]):
+        headers = [_norm_header(v) for v in row]
+        for ci, h in enumerate(headers):
+            if h == "prijs per stuk" or ("prijs" in h and "stuk" in h):
+                pps_col = ci
+        for ci, h in enumerate(headers):
+            if h == "prijs":
+                prijs_col = ci
+        for ci, h in enumerate(headers):
+            if h == "aantal" or h in ["1e soort", "2e soort", "dubbeldooiers", "dubbel"]:
+                aantal_col = ci
+        if pps_col is not None and prijs_col is not None:
+            if aantal_col is None:
+                aantal_col = max(prijs_col - 1, 0)
+            header_row = ri
+            break
+        aantal_col = prijs_col = pps_col = None
+
+    if header_row is None:
+        return []
+
+    table = []
+    for row in rows[header_row + 1:]:
+        def get(col):
+            return row[col] if col is not None and col < len(row) else ""
+        qty = _num(get(aantal_col))
+        price = _num(get(prijs_col))
+        pps = _num(get(pps_col))
+        if qty is None or price is None:
+            continue
+        if qty <= 0:
+            continue
+        if pps is None or pps <= 0:
+            pps = price / qty
+        table.append({"aantal": int(round(qty)), "prijs": round(price, 2), "prijs_per_stuk": float(pps)})
+    table.sort(key=lambda r: r["aantal"])
+    return table
+
+
+def load_price_tables(force=False):
+    path = PRICE_FILE
+    if not path.exists():
+        return {}, f"Prijsbestand niet gevonden: {path}"
+    try:
+        mtime = path.stat().st_mtime
+        if not force and _PRICE_CACHE.get("mtime") == mtime and _PRICE_CACHE.get("tables") is not None:
+            return _PRICE_CACHE["tables"], _PRICE_CACHE.get("error")
+        rows_by_sheet = _read_xlsx_sheet_rows(path)
+        wanted = {
+            "soort1": ["1e soort", "eerste soort", "1e"],
+            "soort2": ["2e soort", "tweede soort", "2e"],
+            "dubbeldooiers": ["dubbeldooiers", "dubbeldooier", "dubbel"],
+        }
+        tables = {}
+        for key, names in wanted.items():
+            found_name = None
+            for sheet_name in rows_by_sheet:
+                if _norm_header(sheet_name) in names:
+                    found_name = sheet_name
+                    break
+            if found_name is None:
+                # fallback: zoek of de naam erin voorkomt
+                for sheet_name in rows_by_sheet:
+                    sn = _norm_header(sheet_name)
+                    if any(n in sn for n in names):
+                        found_name = sheet_name
+                        break
+            tables[key] = _extract_price_table(rows_by_sheet.get(found_name, []), found_name or key)
+        missing = [k for k, v in tables.items() if not v]
+        error = "" if not missing else "Geen prijstabel gevonden voor: " + ", ".join(missing)
+        _PRICE_CACHE.update({"mtime": mtime, "tables": tables, "error": error})
+        return tables, error
+    except Exception as e:
+        _PRICE_CACHE.update({"mtime": None, "tables": {}, "error": str(e)})
+        return {}, f"Prijsbestand kon niet gelezen worden: {e}"
+
+
+def price_for_amount(kind, amount):
+    try:
+        amount = int(amount or 0)
+    except Exception:
+        amount = 0
+    if amount <= 0:
+        return 0.0, 0.0
+    tables, _err = load_price_tables()
+    table = tables.get(kind) or []
+    if not table:
+        return 0.0, 0.0
+
+    chosen = None
+    for row in table:
+        if amount == row["aantal"]:
+            return round(row["prijs"], 2), float(row["prijs_per_stuk"])
+        if row["aantal"] <= amount:
+            chosen = row
+        elif row["aantal"] > amount:
+            break
+    if chosen is None:
+        chosen = table[0]
+    pps = float(chosen["prijs_per_stuk"] or (chosen["prijs"] / chosen["aantal"]))
+    return round(amount * pps + 1e-9, 2), pps
+
+
+def row_get(row, key, default=None):
+    try:
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+        if isinstance(row, dict):
+            return row.get(key, default)
+    except Exception:
+        pass
+    return default
+
+
+def calculate_order_price_live(row):
+    s1 = int(row_get(row, "soort1", 0) or 0)
+    s2 = int(row_get(row, "soort2", 0) or 0)
+    dd = int(row_get(row, "dubbeldooiers", 0) or 0)
+    fixed = int(row_get(row, "vaste_prijs_actief", 0) or 0) == 1
+    fixed_pps = parse_money(row_get(row, "vaste_prijs_per_ei", 0), 0)
+    details = []
+    if fixed:
+        total_eggs = s1 + s2 + dd
+        total = round(total_eggs * fixed_pps + 1e-9, 2)
+        if total_eggs:
+            details.append({"label": "Vaste prijs", "aantal": total_eggs, "prijs": total, "prijs_per_stuk": fixed_pps})
+        return {"total": total, "details": details, "mode": "vast", "mode_label": "Vaste prijs"}
+
+    total = 0.0
+    for kind, label, amount in [
+        ("soort1", "1e soort", s1),
+        ("soort2", "2e soort", s2),
+        ("dubbeldooiers", "Dubbel", dd),
+    ]:
+        price, pps = price_for_amount(kind, amount)
+        total += price
+        if amount:
+            details.append({"label": label, "aantal": amount, "prijs": price, "prijs_per_stuk": pps})
+    return {"total": round(total, 2), "details": details, "mode": "lijst", "mode_label": "Volgens prijslijst"}
+
+
+def calculate_order_price(row):
+    """Geef de prijs van een bestelling.
+
+    Vanaf v14 wordt de prijs bij aanmaken/wijzigen opgeslagen in de database.
+    Daardoor blijven oude bestellingen hetzelfde bedrag houden, ook als later
+    eierprijzen.xlsx wordt aangepast. Oude regels zonder opgeslagen prijs vallen
+    terug op live berekenen uit de huidige Excel.
+    """
+    stored = row_get(row, "prijs_totaal", None)
+    if stored not in (None, ""):
+        try:
+            total = round(float(stored), 2)
+            mode = (row_get(row, "prijs_bron", "") or "").strip()
+            label = (row_get(row, "prijs_label", "") or "").strip()
+            if not label:
+                if mode == "vast":
+                    fixed_pps = parse_money(row_get(row, "vaste_prijs_per_ei", 0), 0)
+                    label = "Vaste prijs"
+                elif mode == "lijst":
+                    label = "Volgens prijslijst"
+                else:
+                    label = "Opgeslagen prijs"
+            return {"total": total, "details": [], "mode": mode or "opgeslagen", "mode_label": label}
+        except Exception:
+            pass
+    return calculate_order_price_live(row)
+
+
+def persist_order_price(conn, order_id):
+    """Bereken prijs opnieuw en sla vast op bij de bestelling."""
+    row = conn.execute("SELECT * FROM bestellingen WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return
+    pricing = calculate_order_price_live(row)
+    conn.execute(
+        "UPDATE bestellingen SET prijs_totaal=?, prijs_bron=?, prijs_label=? WHERE id=?",
+        (round(pricing["total"], 2), pricing["mode"], pricing["mode_label"], order_id),
+    )
+
+
+def price_tables_for_view():
+    tables, error = load_price_tables(force=True)
+    view = {}
+    labels = {"soort1": "1e soort", "soort2": "2e soort", "dubbeldooiers": "Dubbeldooiers"}
+    for key in ["soort1", "soort2", "dubbeldooiers"]:
+        view[key] = {
+            "label": labels[key],
+            "rows": [dict(r, prijs_mooi=money_text(r["prijs"]), prijs_per_stuk_mooi=price_per_piece_text(r["prijs_per_stuk"])) for r in tables.get(key, [])]
+        }
+    return view, error
+
+
+
+def month_name(n):
+    maanden = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
+    try:
+        return maanden[int(n)-1]
+    except Exception:
+        return str(n)
+
+
+def period_key_label(d, periode):
+    """Maak sleutel/label voor Totalen pagina."""
+    if periode == "week":
+        iso = d.isocalendar()
+        monday = d - timedelta(days=d.weekday())
+        sunday = monday + timedelta(days=6)
+        key = f"{iso.year}-W{iso.week:02d}"
+        label = f"Week {iso.week} · {iso.year}"
+        sub = f"{monday.strftime('%d-%m-%Y')} t/m {sunday.strftime('%d-%m-%Y')}"
+        return key, label, sub
+    if periode == "maand":
+        key = f"{d.year}-{d.month:02d}"
+        label = f"{month_name(d.month).capitalize()} {d.year}"
+        return key, label, ""
+    if periode == "jaar":
+        key = f"{d.year}"
+        return key, str(d.year), ""
+    key = d.isoformat()
+    return key, compact_date(d.isoformat()), pretty_date(d.isoformat())
+
+
+def empty_total():
+    return {
+        "bestellingen": 0,
+        "klanten": set(),
+        "soort1": 0,
+        "soort2": 0,
+        "dubbeldooiers": 0,
+        "eieren": 0,
+        "bedrag": 0.0,
+    }
+
+
+def finalize_total(t):
+    t = dict(t)
+    klanten = t.get("klanten", set())
+    t["klanten_aantal"] = len(klanten) if isinstance(klanten, set) else int(klanten or 0)
+    t.pop("klanten", None)
+    t["bedrag"] = round(float(t.get("bedrag", 0) or 0), 2)
+    t["bedrag_mooi"] = money_text(t["bedrag"])
+    t["soort1_stack"] = amount_text(t.get("soort1", 0))
+    t["soort2_stack"] = amount_text(t.get("soort2", 0))
+    t["dubbeldooiers_stack"] = amount_text(t.get("dubbeldooiers", 0))
+    return t
+
+
+def build_totalen(conn, periode="dag", status="voltooid", vanaf="", tot=""):
+    periode = periode if periode in ["dag", "week", "maand", "jaar"] else "dag"
+    status = status if status in ["voltooid", "open", "alles"] else "voltooid"
+    vanaf_d = parse_date(vanaf) if vanaf else None
+    tot_d = parse_date(tot) if tot else None
+
+    rows = conn.execute("""
+        SELECT b.*, k.naam AS klant_naam, k.telefoon, k.email, k.adres
+        FROM bestellingen b
+        JOIN klanten k ON k.id = b.klant_id
+        ORDER BY b.ophaal_datum DESC, b.id DESC
+    """).fetchall()
+
+    groups = {}
+    summary = empty_total()
+
+    for r in rows:
+        verwerkt = int(r["verwerkt"] or 0) == 1
+        if status == "voltooid" and not verwerkt:
+            continue
+        if status == "open" and verwerkt:
+            continue
+
+        if status == "voltooid":
+            datum_raw = (r["voltooid_op"] or "")[:10] or r["ophaal_datum"]
+        elif status == "open":
+            datum_raw = r["ophaal_datum"]
+        else:
+            datum_raw = ((r["voltooid_op"] or "")[:10] if verwerkt else "") or r["ophaal_datum"]
+
+        d = parse_date(datum_raw)
+        if vanaf_d and d < vanaf_d:
+            continue
+        if tot_d and d > tot_d:
+            continue
+
+        key, label, sub = period_key_label(d, periode)
+        if key not in groups:
+            groups[key] = {"key": key, "label": label, "sub": sub, **empty_total()}
+
+        pricing = calculate_order_price(r)
+        bedrag = float(pricing.get("total", 0) or 0)
+        s1 = int(r["soort1"] or 0)
+        s2 = int(r["soort2"] or 0)
+        dd = int(r["dubbeldooiers"] or 0)
+
+        for target in (groups[key], summary):
+            target["bestellingen"] += 1
+            target["klanten"].add(r["klant_id"])
+            target["soort1"] += s1
+            target["soort2"] += s2
+            target["dubbeldooiers"] += dd
+            target["eieren"] += s1 + s2 + dd
+            target["bedrag"] += bedrag
+
+    group_list = []
+    for key, g in groups.items():
+        gf = finalize_total(g)
+        gf["key"] = key
+        gf["label"] = g["label"]
+        gf["sub"] = g.get("sub", "")
+        group_list.append(gf)
+    group_list.sort(key=lambda x: x["key"], reverse=True)
+
+    return finalize_total(summary), group_list
+
 def init_db():
     with db() as conn:
+        # WAL maakt SQLite geschikter voor meerdere gebruikers tegelijk:
+        # lezen kan doorgaan terwijl kort wordt geschreven.
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA busy_timeout = 10000")
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS klanten (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,6 +602,11 @@ def init_db():
             factuur_meegeven INTEGER DEFAULT 0,
             pinnen INTEGER DEFAULT 0,
             contant INTEGER DEFAULT 0,
+            vaste_prijs_actief INTEGER DEFAULT 0,
+            vaste_prijs_per_ei REAL DEFAULT 0,
+            prijs_totaal REAL DEFAULT NULL,
+            prijs_bron TEXT DEFAULT '',
+            prijs_label TEXT DEFAULT '',
             opmerking TEXT DEFAULT '',
             verwerkt INTEGER DEFAULT 0,
             voltooid_op TEXT DEFAULT '',
@@ -137,6 +625,11 @@ def init_db():
             "factuur_meegeven": "INTEGER DEFAULT 0",
             "pinnen": "INTEGER DEFAULT 0",
             "contant": "INTEGER DEFAULT 0",
+            "vaste_prijs_actief": "INTEGER DEFAULT 0",
+            "vaste_prijs_per_ei": "REAL DEFAULT 0",
+            "prijs_totaal": "REAL DEFAULT NULL",
+            "prijs_bron": "TEXT DEFAULT ''",
+            "prijs_label": "TEXT DEFAULT ''",
             "verwerkt": "INTEGER DEFAULT 0",
             "voltooid_op": "TEXT DEFAULT ''",
         }.items():
@@ -152,9 +645,9 @@ def init_db():
         if "bijgewerkt_op" not in k_cols:
             conn.execute("ALTER TABLE klanten ADD COLUMN bijgewerkt_op TEXT DEFAULT ''")
 
-@app.before_request
-def before():
-    init_db()
+# Bij Gunicorn wordt __main__ niet uitgevoerd. Initialiseer de database daarom
+# al bij import/start van de app. Niet meer op elk verzoek; dat scheelt locks.
+init_db()
 
 def amount_text(amount):
     amount = int(amount or 0)
@@ -198,6 +691,33 @@ def compact_date(value):
         return value or ""
 
 
+def notification_date_text(value):
+    """Datum voor WhatsApp/HA notificaties.
+
+    Niet als 04-06-2026, want WhatsApp herkent dat soms als telefoonnummer/link.
+    Daarom tekstvorm: 4 juni 2026.
+    """
+    maanden = {
+        1: "januari",
+        2: "februari",
+        3: "maart",
+        4: "april",
+        5: "mei",
+        6: "juni",
+        7: "juli",
+        8: "augustus",
+        9: "september",
+        10: "oktober",
+        11: "november",
+        12: "december",
+    }
+    try:
+        d = datetime.strptime(value, "%Y-%m-%d")
+        return f"{d.day} {maanden.get(d.month, d.month)} {d.year}"
+    except Exception:
+        return value or ""
+
+
 def notification_amounts(row):
     parts = []
     try:
@@ -206,28 +726,129 @@ def notification_amounts(row):
         dd = int(row["dubbeldooiers"] or 0)
     except Exception:
         s1 = s2 = dd = 0
-    if s1:
-        parts.append(f"{s1} 1e soort")
-    if s2:
-        parts.append(f"{s2} 2e soort")
-    if dd:
-        parts.append(f"{dd} dubbeldooiers")
+
+    def one(amount, label):
+        if not amount:
+            return None
+        extra = amount_text(amount).replace(" en ", " + ").replace(" eieren", " los")
+        if amount >= 30 and extra:
+            return f"{amount} {label} ({extra})"
+        return f"{amount} {label}"
+
+    for item in [one(s1, "1e soort"), one(s2, "2e soort"), one(dd, "dubbeldooiers")]:
+        if item:
+            parts.append(item)
     return " + ".join(parts) if parts else "geen eieren"
 
 
-def build_notification_message(kind, row):
+def notification_payment_text(row):
+    """Korte betaaltekst voor HA/WhatsApp meldingen."""
+    labels = []
+    try:
+        pinnen = int(row["pinnen"] or 0) == 1
+        contant = int(row["contant"] or 0) == 1
+        factuur = int(row["factuur"] or 0) == 1
+        factuur_meegeven = int(row["factuur_meegeven"] or 0) == 1
+    except Exception:
+        pinnen = contant = factuur = factuur_meegeven = False
+
+    if pinnen and contant:
+        labels.append("Pinnen of Contant")
+    else:
+        if pinnen:
+            labels.append("Pinnen")
+        if contant:
+            labels.append("Contant")
+
+    if factuur:
+        labels.append("Factuur mailen")
+    if factuur_meegeven:
+        labels.append("Factuur meegeven")
+
+    return " · ".join(labels) if labels else "Betaling onbekend"
+
+
+def notification_price_text(row):
+    try:
+        pricing = calculate_order_price(row)
+        bedrag = money_text(pricing.get("total", 0)).replace("€ ", "€")
+        mode = (pricing.get("mode") or "").strip()
+        label = (pricing.get("mode_label") or "").strip().lower()
+        if mode == "vast" or "vast" in label:
+            bron = "Vaste prijs"
+        elif mode == "lijst" or "lijst" in label:
+            bron = "Volgens prijslijst"
+        else:
+            bron = "Prijs"
+        return f"{bedrag} {bron}"
+    except Exception:
+        return f"{money_text(0).replace('€ ', '€')} Prijs"
+
+
+def notification_amount_lines(row):
+    """Aantallen per soort als losse regels voor Home Assistant webhook.
+
+    Hiermee hoeft de HA automation niet meer te splitsen op plus-tekens.
+    """
+    lines = []
+    try:
+        s1 = int(row["soort1"] or 0)
+        s2 = int(row["soort2"] or 0)
+        dd = int(row["dubbeldooiers"] or 0)
+    except Exception:
+        s1 = s2 = dd = 0
+
+    def one(amount, label):
+        if not amount:
+            return None
+        extra = amount_text(amount).replace(" en ", " + ").replace(" eieren", " los")
+        if amount >= 30 and extra:
+            return f"{amount} {label} ({extra})"
+        return f"{amount} {label}"
+
+    for item in [one(s1, "1e soort"), one(s2, "2e soort"), one(dd, "dubbeldooiers")]:
+        if item:
+            lines.append(item)
+    return lines or ["geen eieren"]
+
+
+def build_notification_payload(kind, row):
+    """Maak een gestructureerde webhook-payload.
+
+    Geen emoji's hier; die komen in de Home Assistant automation.
+    De oude 'message' blijft als fallback aanwezig, maar wordt niet meer op 255 tekens afgekapt.
+    """
     naam = (row["klant_naam"] or "Onbekende klant").strip()
     adres = (row["adres"] or "").strip()
     klant = f"{naam} - {adres}" if adres else naam
-    aantallen = notification_amounts(row)
-    datum = compact_date(row["ophaal_datum"])
+    eieren_lines = notification_amount_lines(row)
+    eieren = " + ".join(eieren_lines)
+    betaling = notification_payment_text(row)
+    prijs = notification_price_text(row)
+    datum = notification_date_text(row["ophaal_datum"])
     tijd = time_label(row)
-    # Tijdstip achteraan zodat Home Assistant altijd een nieuwe state ziet, ook bij twee gelijke meldingen.
-    msg = f"{kind} | {klant} | {aantallen} | {datum} | {tijd} | #{row['id']} | {datetime.now().strftime('%H:%M:%S')}"
-    if len(msg) > 255:
-        msg = msg[:252] + "..."
-    return msg
+    aangemaakt = local_now().strftime("%H:%M:%S")
+    nummer = f"#{row['id']}"
 
+    # Pipe-message blijft beschikbaar voor bestaande automations, maar de voorkeur is trigger.json velden gebruiken.
+    message = f"{kind} | {klant} | {eieren} | {betaling} | {prijs} | {datum} | {tijd} | {nummer} | {aangemaakt}"
+
+    return {
+        "message": message,
+        "status": kind,
+        "naam": naam,
+        "adres": adres,
+        "klant": klant,
+        "eieren": eieren,
+        "eieren_regels": eieren_lines,
+        "betaling": betaling,
+        "prijs": prijs,
+        "datum": datum,
+        "tijd": tijd,
+        "nummer": nummer,
+        "aangemaakt": aangemaakt,
+        "entity_id": HA_NOTIFY_ENTITY,
+    }
 
 def fetch_order_for_notification(conn, order_id):
     return conn.execute("""
@@ -238,17 +859,17 @@ def fetch_order_for_notification(conn, order_id):
     """, (order_id,)).fetchone()
 
 
-def post_ha_webhook(value):
-    """Fallback zonder SUPERVISOR_TOKEN.
+def post_ha_webhook(payload_data):
+    """Stuur notificatie naar Home Assistant via webhook.
 
-    Maak in Home Assistant een automation met webhook_id: eieragenda_notificatie.
-    Die automation zet input_text.eieragenda_notificatie.
+    De payload is gestructureerd JSON, zodat Home Assistant niet meer hoeft te splitsen op tekst.
     """
     webhook_id = os.environ.get("EIERAGENDA_HA_WEBHOOK_ID", "eieragenda_notificatie")
-    payload = json.dumps({
-        "message": value,
-        "entity_id": HA_NOTIFY_ENTITY,
-    }).encode("utf-8")
+    if isinstance(payload_data, str):
+        payload_data = {"message": payload_data, "entity_id": HA_NOTIFY_ENTITY}
+    else:
+        payload_data.setdefault("entity_id", HA_NOTIFY_ENTITY)
+    payload = json.dumps(payload_data, ensure_ascii=False).encode("utf-8")
 
     # Probeer meerdere interne HA adressen. De eerste die werkt is genoeg.
     urls = [
@@ -269,7 +890,7 @@ def post_ha_webhook(value):
         try:
             with urllib.request.urlopen(req, timeout=3) as resp:
                 resp.read()
-            print(f"[Eieragenda] HA webhook notificatie verzonden via {url}: {value}", flush=True)
+            print(f"[Eieragenda] HA webhook notificatie verzonden via {url}: {payload_data.get('message', payload_data)}", flush=True)
             return True
         except urllib.error.HTTPError as e:
             try:
@@ -284,16 +905,16 @@ def post_ha_webhook(value):
     return False
 
 
-def send_ha_notification(value):
-    # Alleen webhook gebruiken; geen SUPERVISOR_TOKEN of directe HA API meer.
-    post_ha_webhook(value)
+def send_ha_notification(payload_data):
+    # Alleen webhook gebruiken; geen directe Home Assistant API-token nodig.
+    post_ha_webhook(payload_data)
 
 def notify_order_event(conn, kind, order_id):
     row = fetch_order_for_notification(conn, order_id)
     if not row:
         print(f"[Eieragenda] Geen bestelling gevonden voor notificatie: {order_id}", flush=True)
         return
-    send_ha_notification(build_notification_message(kind, row))
+    send_ha_notification(build_notification_payload(kind, row))
 
 def time_sort_sql():
     return """
@@ -304,6 +925,9 @@ def time_sort_sql():
       ELSE '00:01'
     END
     """
+
+def form_has_fixed_price(form):
+    return (form.get("prijs_type") == "vast") or (form.get("vaste_prijs_actief") in ["on", "1", "true", "True"])
 
 def validate_order_form(form):
     klant_id = form.get("klant_id", "")
@@ -317,6 +941,8 @@ def validate_order_form(form):
         return False, "Niet alle velden ingevuld: vul de naam van de nieuwe klant in."
     if s1 + s2 + dd <= 0:
         return False, "Niet alle velden ingevuld: vul minimaal één aantal eieren in."
+    if form_has_fixed_price(form) and parse_money(form.get("vaste_prijs_per_ei"), 0) <= 0:
+        return False, "Vul een vaste prijs per ei in, of zet vaste prijs uit."
     return True, ""
 
 def ensure_customer(conn, form):
@@ -342,6 +968,17 @@ def decorate_order(r):
     order["dubbeldooiers_stack"] = amount_text(r["dubbeldooiers"])
     order["aangemaakt_mooi"] = pretty_datetime(r["aangemaakt_op"])
     order["voltooid_mooi"] = pretty_datetime(r["voltooid_op"]) if "voltooid_op" in r.keys() else ""
+    pricing = calculate_order_price(order)
+    order["prijs_totaal"] = pricing["total"]
+    order["prijs_totaal_mooi"] = money_text(pricing["total"])
+    order["prijs_label"] = pricing["mode_label"]
+    order["prijs_mode"] = pricing["mode"]
+    if pricing["mode"] == "lijst":
+        order["prijs_label_kort"] = "Volgens prijslijst"
+    elif pricing["mode"] == "vast":
+        order["prijs_label_kort"] = "Vaste prijs"
+    else:
+        order["prijs_label_kort"] = pricing["mode_label"] or "Prijs"
     return order
 
 def build_groups(conn, history=False, q="", datum=""):
@@ -351,12 +988,25 @@ def build_groups(conn, history=False, q="", datum=""):
     if history:
         where = "1=1"
         params = []
-        order_dir = "DESC"
+        order_sql = f"""
+          b.verwerkt ASC,
+          CASE WHEN b.verwerkt=0 THEN b.ophaal_datum END ASC,
+          CASE WHEN b.verwerkt=0 THEN {time_sort_sql()} END ASC,
+          CASE WHEN b.verwerkt=1 THEN COALESCE(NULLIF(b.voltooid_op, ''), b.bijgewerkt_op, b.aangemaakt_op) END DESC,
+          b.ophaal_datum DESC,
+          k.naam
+        """
     else:
         # Toon vandaag/toekomst, maar óók oude bestellingen die nog niet voltooid zijn.
         where = "(b.ophaal_datum >= ? OR b.verwerkt = 0)"
         params = [today_iso()]
-        order_dir = "ASC"
+        order_sql = f"""
+          b.ophaal_datum ASC,
+          b.verwerkt ASC,
+          CASE WHEN b.verwerkt=1 THEN COALESCE(NULLIF(b.voltooid_op, ''), b.bijgewerkt_op, b.aangemaakt_op) END DESC,
+          CASE WHEN b.verwerkt=0 THEN {time_sort_sql()} END ASC,
+          k.naam
+        """
 
     if q:
         where += """
@@ -379,32 +1029,47 @@ def build_groups(conn, history=False, q="", datum=""):
         FROM bestellingen b
         JOIN klanten k ON k.id = b.klant_id
         WHERE {where}
-        ORDER BY b.ophaal_datum {order_dir}, b.verwerkt ASC, {time_sort_sql()}, k.naam
+        ORDER BY
+          {order_sql}
     """, tuple(params)).fetchall()
 
     grouped = []
-    current_date = None
+    groups_by_date = {}
     for r in rows:
-        if r["ophaal_datum"] != current_date:
-            current_date = r["ophaal_datum"]
-            grouped.append({
+        current_date = r["ophaal_datum"]
+        if history and r["verwerkt"]:
+            # In geschiedenis groeperen we voltooide bestellingen op voltooid-datum.
+            # Open bestellingen blijven op ophaaldatum bovenaan staan.
+            done_dt = ""
+            try:
+                done_dt = (r["voltooid_op"] or "")[:10]
+            except Exception:
+                done_dt = ""
+            if done_dt:
+                current_date = done_dt
+        if current_date not in groups_by_date:
+            groups_by_date[current_date] = {
                 "datum": current_date,
                 "datum_mooi": pretty_date(current_date),
-                "is_overdue": parse_date(current_date) < date.today(),
+                "is_overdue": parse_date(current_date) < today_date(),
                 "orders": [],
-                "remaining": {"soort1": 0, "soort2": 0, "dubbeldooiers": 0, "aantal": 0},
-            })
-        g = grouped[-1]
-        g["orders"].append(decorate_order(r))
+                "remaining": {"soort1": 0, "soort2": 0, "dubbeldooiers": 0, "aantal": 0, "prijs_totaal": 0.0},
+            }
+            grouped.append(groups_by_date[current_date])
+        g = groups_by_date[current_date]
+        decorated = decorate_order(r)
+        g["orders"].append(decorated)
         if not r["verwerkt"]:
             for key in ["soort1", "soort2", "dubbeldooiers"]:
                 g["remaining"][key] += r[key]
             g["remaining"]["aantal"] += 1
+            g["remaining"]["prijs_totaal"] += decorated.get("prijs_totaal", 0) or 0
 
     for g in grouped:
         g["remaining"]["soort1_stack"] = amount_text(g["remaining"]["soort1"])
         g["remaining"]["soort2_stack"] = amount_text(g["remaining"]["soort2"])
         g["remaining"]["dubbeldooiers_stack"] = amount_text(g["remaining"]["dubbeldooiers"])
+        g["remaining"]["prijs_mooi"] = money_text(g["remaining"].get("prijs_totaal", 0))
     return grouped
 
 
@@ -424,7 +1089,7 @@ def index():
         klanten = conn.execute("SELECT * FROM klanten WHERE actief=1 ORDER BY naam").fetchall()
         grouped = build_groups(conn, history=False)
         token = state_token(conn)
-    return render_template("index.html", klanten=klanten, grouped=grouped, today=today_iso(), state_token=token, history=False)
+    return render_template("index.html", klanten=klanten, grouped=grouped, today=today_iso(), state_token=token, history=False, body_class="page-agenda")
 
 @app.route("/geschiedenis")
 def geschiedenis():
@@ -434,7 +1099,114 @@ def geschiedenis():
         klanten = conn.execute("SELECT * FROM klanten WHERE actief=1 ORDER BY naam").fetchall()
         grouped = build_groups(conn, history=True, q=q, datum=datum)
         token = state_token(conn)
-    return render_template("geschiedenis.html", klanten=klanten, grouped=grouped, today=today_iso(), state_token=token, history=True, q=q, datum=datum, body_class="page-static")
+    return render_template("geschiedenis.html", klanten=klanten, grouped=grouped, today=today_iso(), state_token=token, history=True, q=q, datum=datum, body_class="page-static page-history")
+
+
+
+@app.route("/prijzen")
+def prijzen():
+    def count_arg(name):
+        try:
+            return max(int(request.args.get(name, "0") or 0), 0)
+        except Exception:
+            return 0
+
+    amounts = {
+        "soort1": count_arg("soort1"),
+        "soort2": count_arg("soort2"),
+        "dubbeldooiers": count_arg("dubbeldooiers"),
+    }
+    details = []
+    total = 0.0
+    for key, label in [("soort1", "1e soort"), ("soort2", "2e soort"), ("dubbeldooiers", "Dubbeldooiers")]:
+        price, pps = price_for_amount(key, amounts[key])
+        total += price
+        details.append({
+            "key": key,
+            "label": label,
+            "aantal": amounts[key],
+            "prijs": price,
+            "prijs_mooi": money_text(price),
+            "prijs_per_stuk_mooi": price_per_piece_text(pps),
+        })
+    tables, price_error = price_tables_for_view()
+    return render_template(
+        "prijzen.html",
+        amounts=amounts,
+        details=details,
+        total=round(total, 2),
+        total_mooi=money_text(total),
+        tables=tables,
+        price_error=price_error,
+        price_file=str(PRICE_FILE),
+        state_token="",
+        body_class="page-static",
+    )
+
+
+@app.route("/totalen")
+def totalen():
+    periode = request.args.get("periode", "dag")
+    status = request.args.get("status", "voltooid")
+    vanaf = request.args.get("vanaf", "")
+    tot = request.args.get("tot", "")
+    with db() as conn:
+        summary, groups = build_totalen(conn, periode=periode, status=status, vanaf=vanaf, tot=tot)
+    status_label = {
+        "voltooid": "Alleen voltooide bestellingen",
+        "open": "Alleen open bestellingen",
+        "alles": "Open en voltooide bestellingen",
+    }.get(status, "Alleen voltooide bestellingen")
+    periode_label = {
+        "dag": "per dag",
+        "week": "per week",
+        "maand": "per maand",
+        "jaar": "per jaar",
+    }.get(periode, "per dag")
+    return render_template(
+        "totalen.html",
+        periode=periode,
+        status=status,
+        vanaf=vanaf,
+        tot=tot,
+        status_label=status_label,
+        periode_label=periode_label,
+        summary=summary,
+        groups=groups,
+        state_token="",
+        body_class="page-static page-totalen",
+    )
+
+@app.route("/api/prijzen/bereken")
+def api_prijzen_bereken():
+    def safe_int_arg(name):
+        try:
+            return max(0, int(float(str(request.args.get(name) or 0).replace(",", "."))))
+        except Exception:
+            return 0
+    row = {
+        "soort1": safe_int_arg("soort1"),
+        "soort2": safe_int_arg("soort2"),
+        "dubbeldooiers": safe_int_arg("dubbeldooiers"),
+        "vaste_prijs_actief": 0,
+        "vaste_prijs_per_ei": 0,
+    }
+    pricing = calculate_order_price_live(row)
+    return jsonify({
+        "ok": True,
+        "total": pricing["total"],
+        "total_mooi": money_text(pricing["total"]),
+        "details": [
+            {
+                "label": d["label"],
+                "aantal": d["aantal"],
+                "prijs": d["prijs"],
+                "prijs_mooi": money_text(d["prijs"]),
+                "prijs_per_stuk_mooi": price_per_piece_text(d["prijs_per_stuk"]),
+            }
+            for d in pricing.get("details", [])
+        ],
+    })
 
 
 @app.route("/bestelling/nieuw", methods=["POST"])
@@ -455,8 +1227,8 @@ def bestelling_nieuw():
         conn.execute("""
             INSERT INTO bestellingen
             (klant_id, ophaal_datum, tijd_type, tijd_van, tijd_tot, tijd_extra,
-             soort1, soort2, dubbeldooiers, factuur, factuur_meegeven, pinnen, contant, opmerking, verwerkt, aangemaakt_op, bijgewerkt_op)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+             soort1, soort2, dubbeldooiers, factuur, factuur_meegeven, pinnen, contant, vaste_prijs_actief, vaste_prijs_per_ei, opmerking, verwerkt, aangemaakt_op, bijgewerkt_op)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         """, (
             klant_id, request.form.get("ophaal_datum") or today_iso(),
             tijd_type, tijd_van, tijd_tot, request.form.get("tijd_extra", "").strip(),
@@ -465,9 +1237,12 @@ def bestelling_nieuw():
             1 if request.form.get("factuur_meegeven") == "on" else 0,
             1 if request.form.get("pinnen") == "on" else 0,
             1 if request.form.get("contant") == "on" else 0,
+            1 if form_has_fixed_price(request.form) else 0,
+            parse_money(request.form.get("vaste_prijs_per_ei"), 0),
             request.form.get("opmerking", "").strip(), now, now
         ))
         new_order_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        persist_order_price(conn, new_order_id)
         notify_order_event(conn, "Nieuwe bestelling", new_order_id)
     return redirect(app_url("index"))
 
@@ -507,7 +1282,7 @@ def bestelling_bewerken(id):
             conn.execute("""
                 UPDATE bestellingen
                 SET klant_id=?, ophaal_datum=?, tijd_type=?, tijd_van=?, tijd_tot=?, tijd_extra=?,
-                    soort1=?, soort2=?, dubbeldooiers=?, factuur=?, factuur_meegeven=?, pinnen=?, contant=?, opmerking=?,
+                    soort1=?, soort2=?, dubbeldooiers=?, factuur=?, factuur_meegeven=?, pinnen=?, contant=?, vaste_prijs_actief=?, vaste_prijs_per_ei=?, opmerking=?,
                     verwerkt=?, voltooid_op=?, bijgewerkt_op=?
                 WHERE id=?
             """, (
@@ -524,12 +1299,15 @@ def bestelling_bewerken(id):
                 1 if request.form.get("factuur_meegeven") == "on" else 0,
                 1 if request.form.get("pinnen") == "on" else 0,
                 1 if request.form.get("contant") == "on" else 0,
+                1 if form_has_fixed_price(request.form) else 0,
+                parse_money(request.form.get("vaste_prijs_per_ei"), 0),
                 request.form.get("opmerking", "").strip(),
                 verwerkt,
                 voltooid_op,
                 now,
                 id
             ))
+            persist_order_price(conn, id)
             notify_order_event(conn, notification_kind, id)
             return redirect(app_url("index"))
 
@@ -539,6 +1317,8 @@ def bestelling_bewerken(id):
             JOIN klanten k ON k.id=b.klant_id
             WHERE b.id=?
         """, (id,)).fetchone()
+        if bestelling:
+            bestelling = decorate_order(bestelling)
         klanten = conn.execute("SELECT * FROM klanten WHERE actief=1 ORDER BY naam").fetchall()
     return render_template("edit.html", bestelling=bestelling, klanten=klanten, state_token="", body_class="page-static")
 
@@ -568,7 +1348,11 @@ def toggle_verwerkt(id):
 @app.route("/bestelling/<int:id>/verwijderen", methods=["POST"])
 def bestelling_verwijderen(id):
     with db() as conn:
+        row = fetch_order_for_notification(conn, id)
+        bericht = build_notification_payload("Bestelling verwijderd", row) if row else {}
         conn.execute("DELETE FROM bestellingen WHERE id=?", (id,))
+        if bericht:
+            send_ha_notification(bericht)
     return redirect(app_url("index"))
 
 @app.route("/klanten")
@@ -680,11 +1464,13 @@ def api_laatste_bestelling(klant_id):
         "factuur_meegeven": bool(safe_get("factuur_meegeven", 0)),
         "pinnen": bool(safe_get("pinnen", 0)),
         "contant": bool(safe_get("contant", 0)),
+        "vaste_prijs_actief": bool(safe_get("vaste_prijs_actief", 0)),
+        "prijs_type": "vast" if bool(safe_get("vaste_prijs_actief", 0)) else "lijst",
+        "vaste_prijs_per_ei": safe_get("vaste_prijs_per_ei", 0) or 0,
         "opmerking": safe_get("opmerking", "") or ""
     })
 
 
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("EIERAGENDA_PORT", "8099"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

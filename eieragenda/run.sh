@@ -43,4 +43,11 @@ fi
 echo "[Eieragenda] App-map: ${APP_DIR}"
 echo "[Eieragenda] Start webserver op poort ${EIERAGENDA_PORT:-8099}..."
 cd "${APP_DIR}"
-exec python3 "${APP_DIR}/app.py"
+
+if command -v gunicorn >/dev/null 2>&1; then
+  echo "[Eieragenda] Start met Gunicorn: workers=${EIERAGENDA_WORKERS:-1}, threads=${EIERAGENDA_THREADS:-4}"
+  exec gunicorn     --bind "0.0.0.0:${EIERAGENDA_PORT:-8099}"     --workers "${EIERAGENDA_WORKERS:-1}"     --threads "${EIERAGENDA_THREADS:-4}"     --timeout "${EIERAGENDA_TIMEOUT:-60}"     --access-logfile -     --error-logfile -     app:app
+else
+  echo "[Eieragenda] Gunicorn niet gevonden; fallback naar Flask server."
+  exec python3 "${APP_DIR}/app.py"
+fi

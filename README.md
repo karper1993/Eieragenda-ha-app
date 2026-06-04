@@ -1,3 +1,8 @@
 # Eieragenda Home Assistant add-on
 
-Eieragenda add-on met database en app-bestanden in `/share/eieragenda`. Notificaties lopen via Home Assistant webhook; geen Supervisor-token nodig.
+Eieragenda add-on repository.
+
+Versie 1.0.8:
+- Gunicorn als webserver
+- app-bestanden blijven in `/share/eieragenda/app`
+- database blijft in `/share/eieragenda/eieragenda.db`

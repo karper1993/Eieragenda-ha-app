@@ -13,7 +13,10 @@ ENV PATH="/opt/eieragenda-venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     EIERAGENDA_PORT=8099 \
-    EIERAGENDA_DB_PATH=/share/eieragenda/eieragenda.db
+    EIERAGENDA_DB_PATH=/share/eieragenda/eieragenda.db \
+    EIERAGENDA_WORKERS=1 \
+    EIERAGENDA_THREADS=4 \
+    EIERAGENDA_TIMEOUT=60
 
 WORKDIR /app
 COPY app/ /app/

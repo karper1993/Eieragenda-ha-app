@@ -1,6 +1,6 @@
 name: "Eieragenda"
 description: "Eieragenda voor Home Assistant"
-version: "1.0.7"
+version: "1.0.8"
 slug: "eieragenda"
 arch:
   - aarch64

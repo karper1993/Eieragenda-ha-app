@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div><h1>Prijzen</h1></div>
+  <a class="hero-link" href="{{ app_url('index') }}">Terug</a>
+</header>
+
+<section class="edit-card price-calc-card">
+  <form method="get" class="form" id="priceCalcForm" onsubmit="return false">
+    <section class="form-bubble">
+      <h3>Prijs berekenen</h3>
+      {% if price_error %}
+        <div class="remark price-error">{{ price_error }}<br><small>Verwacht bestand: {{ price_file }}</small></div>
+      {% endif %}
+      <div class="form-grid three">
+        <div class="form-block amount-box amount-soort1"><label>1e soort</label><input class="price-calc-input" type="number" name="soort1" min="0" inputmode="numeric" value="{{ amounts.soort1 }}" onfocus="this.select()" oninput="eieragendaPriceCalcSchedule()" onchange="eieragendaPriceCalcSchedule()" onkeyup="eieragendaPriceCalcSchedule()"></div>
+        <div class="form-block amount-box amount-soort2"><label>2e soort</label><input class="price-calc-input" type="number" name="soort2" min="0" inputmode="numeric" value="{{ amounts.soort2 }}" onfocus="this.select()" oninput="eieragendaPriceCalcSchedule()" onchange="eieragendaPriceCalcSchedule()" onkeyup="eieragendaPriceCalcSchedule()"></div>
+        <div class="form-block amount-box amount-dubbel"><label>Dubbeldooiers</label><input class="price-calc-input" type="number" name="dubbeldooiers" min="0" inputmode="numeric" value="{{ amounts.dubbeldooiers }}" onfocus="this.select()" oninput="eieragendaPriceCalcSchedule()" onchange="eieragendaPriceCalcSchedule()" onkeyup="eieragendaPriceCalcSchedule()"></div>
+      </div>
+      <small class="price-help">Het bedrag wordt automatisch berekend zodra je aantallen invult.</small>
+    </section>
+  </form>
+
+  <section class="price-result" id="priceResult">
+    <h3>Totaal: <span id="priceResultTotal">{{ total_mooi }}</span></h3>
+    <div class="price-result-grid" id="priceResultDetails">
+      {% for d in details %}
+      <div class="price-result-item">
+        <span>{{ d.label }}</span>
+        <strong>{{ d.aantal }}</strong>
+        <small>{{ d.prijs_mooi }} · {{ d.prijs_per_stuk_mooi }}/ei</small>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+
+<section class="timeline price-tables">
+  {% for key, table in tables.items() %}
+  <section class="day-bubble price-table-bubble">
+    <div class="day-header price-table-header">
+      <div class="day-title-block"><h2>{{ table.label }}</h2></div>
+    </div>
+    {% if table.rows %}
+    <div class="price-table-wrap">
+      <table class="price-table">
+        <thead><tr><th>Aantal</th><th>Prijs</th><th>Per ei</th></tr></thead>
+        <tbody>
+        {% for r in table.rows %}
+          <tr><td>{{ r.aantal }}</td><td>{{ r.prijs_mooi }}</td><td>{{ r.prijs_per_stuk_mooi }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <article class="empty-state small-empty"><div>⚠️</div><h3>Geen prijzen gevonden</h3></article>
+    {% endif %}
+  </section>
+  {% endfor %}
+</section>
+
+<script>
+(function(){
+  var timer=null;
+  function appPathLocal(path){
+    var base=(window.EIERAGENDA_BASE||'').replace(/\/$/,'');
+    if(path.charAt(0)!=='/') path='/'+path;
+    return base+path;
+  }
+  window.eieragendaPriceCalcSchedule=function(){
+    clearTimeout(timer);
+    timer=setTimeout(window.eieragendaPriceCalcNow,120);
+  };
+  window.eieragendaPriceCalcNow=async function(){
+    var form=document.getElementById('priceCalcForm');
+    if(!form) return;
+    var inputs=form.querySelectorAll('.price-calc-input');
+    var params=new URLSearchParams();
+    inputs.forEach(function(input){ params.set(input.name,input.value||'0'); });
+    try{
+      var res=await fetch(appPathLocal('/api/prijzen/bereken')+'?'+params.toString(),{cache:'no-store'});
+      var data=await res.json();
+      if(!data.ok) return;
+      var total=document.getElementById('priceResultTotal');
+      var details=document.getElementById('priceResultDetails');
+      if(total) total.textContent=data.total_mooi||'€ 0,00';
+      if(details){
+        details.innerHTML='';
+        (data.details||[]).forEach(function(d){
+          var item=document.createElement('div');
+          item.className='price-result-item';
+          item.innerHTML='<span></span><strong></strong><small></small>';
+          item.querySelector('span').textContent=d.label||'';
+          item.querySelector('strong').textContent=d.aantal||0;
+          item.querySelector('small').textContent=(d.prijs_mooi||'€ 0,00')+' · '+(d.prijs_per_stuk_mooi||'€ 0,000')+'/ei';
+          details.appendChild(item);
+        });
+      }
+    }catch(e){}
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    var form=document.getElementById('priceCalcForm');
+    if(!form) return;
+    form.querySelectorAll('.price-calc-input').forEach(function(input){
+      input.addEventListener('input',window.eieragendaPriceCalcSchedule);
+      input.addEventListener('change',window.eieragendaPriceCalcSchedule);
+      input.addEventListener('keyup',window.eieragendaPriceCalcSchedule);
+      input.addEventListener('focus',function(){ setTimeout(function(){ try{ input.select(); }catch(e){} },0); });
+    });
+    window.eieragendaPriceCalcNow();
+  });
+})();
+</script>
+{% endblock %}

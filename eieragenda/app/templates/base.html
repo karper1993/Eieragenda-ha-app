@@ -5,7 +5,106 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#17120c">
   <title>Eieragenda</title>
-  <link rel="stylesheet" href="{{ app_url('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ app_url('static', filename='style.css') }}?v=32">
+
+  <style>
+    /* v22: vaste prijs rechtstreeks in HTML/CSS, los van oude app.js-cache */
+    .price-direct-box{display:grid;gap:10px}
+    .price-direct-panel{display:none!important;margin-top:0}
+    .price-direct-box label:has(.price-direct-toggle:checked) ~ .price-direct-panel{display:grid!important}
+    .price-direct-toggle:checked + span{background:linear-gradient(145deg,#668b61,#3f663f)!important;color:#fff!important}
+    .price-direct-panel input{width:100%}
+  </style>
+  <script>
+    function eieragendaMoney(value){
+      var n = Number(value || 0);
+      if (!isFinite(n)) n = 0;
+      return '€ ' + n.toFixed(2).replace('.', ',');
+    }
+    function eieragendaNum(value){
+      var n = Number(String(value || '0').replace(',', '.'));
+      return isFinite(n) ? n : 0;
+    }
+    function eieragendaAppPath(path){
+      var base=(window.EIERAGENDA_BASE||'').replace(/\/$/,'');
+      if(path.charAt(0)!=='/') path='/'+path;
+      return base+path;
+    }
+    function eieragendaSyncFixedPrice(form){
+      if(!form) return;
+      var chk=form.querySelector('.price-direct-toggle');
+      var panel=form.querySelector('.price-direct-panel');
+      var input=form.querySelector('input[name="vaste_prijs_per_ei"]');
+      var help=form.querySelector('.price-help');
+      var active=!!(chk && chk.checked);
+      if(panel){ panel.style.display = active ? 'grid' : 'none'; }
+      if(input){ input.disabled = !active; }
+      if(help){ help.style.display = active ? 'none' : 'block'; }
+      if (typeof window.eieragendaOrderPriceUpdate === 'function') {
+        window.eieragendaOrderPriceUpdate(form);
+      }
+    }
+    window.eieragendaOrderPriceUpdate = async function(form){
+      if(!form || !form.classList.contains('order-form')) return;
+      var totalEl=form.querySelector('.order-price-total');
+      var labelEl=form.querySelector('.order-price-label');
+      if(!totalEl) return;
+      if(form.dataset.resettingNewOrder === '1'){
+        totalEl.textContent='€ 0,00';
+        if(labelEl) labelEl.textContent='';
+        return;
+      }
+
+      // v29: per formulier een volgnummer. Oude prijs-berekeningen die later terugkomen
+      // mogen het nieuwe/geresette formulier niet meer overschrijven op mobiel.
+      var seq = (Number(form.dataset.priceSeq || 0) + 1);
+      form.dataset.priceSeq = String(seq);
+      function stillCurrent(){ return form.isConnected && form.dataset.priceSeq === String(seq); }
+
+      var s1=eieragendaNum(form.querySelector('input[name="soort1"]')?.value);
+      var s2=eieragendaNum(form.querySelector('input[name="soort2"]')?.value);
+      var dd=eieragendaNum(form.querySelector('input[name="dubbeldooiers"]')?.value);
+      var sum=s1+s2+dd;
+      if(sum<=0){
+        totalEl.textContent='€ 0,00';
+        if(labelEl) labelEl.textContent='';
+        return;
+      }
+      var fixed=!!form.querySelector('input[name="vaste_prijs_actief"]')?.checked;
+      if(fixed){
+        var pps=eieragendaNum(form.querySelector('input[name="vaste_prijs_per_ei"]')?.value);
+        if(stillCurrent()) totalEl.textContent=eieragendaMoney(sum*pps);
+        if(labelEl && stillCurrent()) labelEl.textContent='';
+        return;
+      }
+      if(labelEl) labelEl.textContent='';
+      var params=new URLSearchParams();
+      params.set('soort1', String(Math.max(0, Math.round(s1))));
+      params.set('soort2', String(Math.max(0, Math.round(s2))));
+      params.set('dubbeldooiers', String(Math.max(0, Math.round(dd))));
+      try{
+        var res=await fetch(eieragendaAppPath('/api/prijzen/bereken')+'?'+params.toString(), {cache:'no-store'});
+        var data=await res.json();
+        if(stillCurrent() && data && data.ok){ totalEl.textContent=data.total_mooi || '€ 0,00'; }
+      }catch(e){
+        if(stillCurrent()) totalEl.textContent='€ 0,00';
+      }
+    };
+    document.addEventListener('DOMContentLoaded',function(){
+      document.querySelectorAll('form').forEach(function(form){
+        eieragendaSyncFixedPrice(form);
+        if(form.classList.contains('order-form')){
+          form.querySelectorAll('input[name="soort1"],input[name="soort2"],input[name="dubbeldooiers"],input[name="vaste_prijs_per_ei"],input[name="vaste_prijs_actief"]').forEach(function(el){
+            el.addEventListener('input',function(){ window.eieragendaOrderPriceUpdate(form); });
+            el.addEventListener('change',function(){ eieragendaSyncFixedPrice(form); window.eieragendaOrderPriceUpdate(form); });
+            el.addEventListener('keyup',function(){ window.eieragendaOrderPriceUpdate(form); });
+          });
+          window.eieragendaOrderPriceUpdate(form);
+        }
+      });
+    });
+  </script>
+
 </head>
 <body class="{{ body_class|default('') }}" data-state-token="{{ state_token|default('') }}">
   <script>window.EIERAGENDA_BASE = {{ app_base|tojson }};</script>
@@ -15,6 +114,78 @@
   <main class="shell">
     {% block content %}{% endblock %}
   </main>
-  <script src="{{ app_url('static', filename='app.js') }}"></script>
+  <script src="{{ app_url('static', filename='app.js') }}?v=32"></script>
+
+  <script>
+    // v32: mobiele HA WebView houdt soms oude tekst in de prijs-preview vast.
+    // Deze inline reset draait NA app.js en overschrijft openOrderModal, zodat de + knop altijd schoon start.
+    (function(){
+      function setTotalZero(form){
+        if(!form) return;
+        var totalEl=form.querySelector('.order-price-total');
+        var labelEl=form.querySelector('.order-price-label');
+        if(totalEl) totalEl.textContent='€ 0,00';
+        if(labelEl) labelEl.textContent='';
+      }
+      function hardResetNewOrderForm(){
+        var modal=document.getElementById('orderModal');
+        if(!modal) return;
+        var form=modal.querySelector('form.order-form, form');
+        if(!form) return;
+
+        form.dataset.resettingNewOrder='1';
+        form.dataset.priceSeq=String(Date.now());
+
+        // Native reset + daarna alles wat mobiel kan onthouden expliciet leeg/uit/nul zetten.
+        try{ form.reset(); }catch(e){}
+
+        var klant=form.querySelector('select[name="klant_id"]');
+        if(klant){ klant.value=''; }
+        var zoek=form.querySelector('.customer-search-input');
+        if(zoek){ zoek.value=''; }
+        form.querySelectorAll('select[name="klant_id"] option').forEach(function(opt){ opt.hidden=false; });
+
+        form.querySelectorAll('input[name="soort1"],input[name="soort2"],input[name="dubbeldooiers"],.egg-input').forEach(function(inp){
+          inp.value='0';
+          if(typeof updateStacks==='function') updateStacks(inp);
+        });
+
+        form.querySelectorAll('input[name="nieuwe_klant"],input[name="adres"],input[name="email"],input[name="telefoon"],input[name="vaste_prijs_per_ei"],input[name="opmerking"],textarea[name="opmerking"]').forEach(function(inp){ inp.value=''; });
+        form.querySelectorAll('input[type="checkbox"]').forEach(function(chk){ chk.checked=false; });
+
+        var none=form.querySelector('input[name="tijd_type"][value="none"]');
+        if(none){ none.checked=true; }
+        form.querySelectorAll('.time-panel,.new-customer-block,.repeat-last-panel').forEach(function(el){ el.classList.add('hidden'); });
+        var rpt=form.querySelector('.repeat-last-panel');
+        if(rpt){ rpt.dataset.order=''; var sm=rpt.querySelector('.repeat-last-summary'); if(sm) sm.textContent=''; }
+
+        if(typeof updateTimeMode==='function') updateTimeMode(form);
+        if(typeof eieragendaSyncFixedPrice==='function') eieragendaSyncFixedPrice(form);
+        if(typeof updatePriceMode==='function') updatePriceMode(form);
+        setTotalZero(form);
+
+        // Laat eventuele oude/cached async berekeningen even uitrazen; zolang aantallen 0 zijn blijft prijs nul.
+        [0,50,150,350,700,1200].forEach(function(ms){
+          setTimeout(function(){
+            var s1=Number(form.querySelector('input[name="soort1"]')?.value || 0);
+            var s2=Number(form.querySelector('input[name="soort2"]')?.value || 0);
+            var dd=Number(form.querySelector('input[name="dubbeldooiers"]')?.value || 0);
+            if((s1+s2+dd)===0){ setTotalZero(form); }
+            if(ms>=700){ form.dataset.resettingNewOrder=''; }
+          }, ms);
+        });
+      }
+
+      window.eieragendaHardResetNewOrderForm=hardResetNewOrderForm;
+      window.openOrderModal=function(){
+        hardResetNewOrderForm();
+        if(typeof openModal==='function') openModal('orderModal');
+        else document.getElementById('orderModal')?.classList.add('open');
+        // Nogmaals na openen, want de mobiele WebView past soms waarden pas na render toe.
+        requestAnimationFrame(function(){ hardResetNewOrderForm(); });
+        setTimeout(hardResetNewOrderForm, 120);
+      };
+    })();
+  </script>
 </body>
 </html>

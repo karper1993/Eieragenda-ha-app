@@ -33,7 +33,7 @@
       <div class="day-title-block">
         <h2>{{ day.datum_mooi }}</h2>
       </div>
-      <span class="day-count">{{ day.orders|length }} regels</span>
+      <span class="day-count">{{ day.orders|length }} bestellingen</span>
     </div>
 
     <div class="order-list inside-day">
@@ -52,11 +52,13 @@
               </div>
               <a href="{{ app_url('bestelling_bewerken', id=b.id) }}" class="tiny-link">Bewerk</a>
             </div>
-            <p>
+            <p class="payment-line">
               {% if b.factuur %}<span class="pay pay-mail">Factuur mailen</span>{% endif %}
-              {% if b.factuur_meegeven %}{% if b.factuur %} · {% endif %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
-              {% if b.contant %}{% if b.factuur or b.factuur_meegeven %} · {% endif %}<span class="pay pay-cash">Contant</span>{% endif %}
-              {% if b.pinnen %}{% if b.factuur or b.factuur_meegeven or b.contant %} · {% endif %}<span class="pay pay-card">Pinnen</span>{% endif %}
+              {% if b.factuur_meegeven %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
+              {% if b.contant %}<span class="pay pay-cash">Contant</span>{% endif %}
+              {% if b.contant and b.pinnen %}<span class="pay-or">of</span>{% endif %}
+              {% if b.pinnen %}<span class="pay pay-card">Pinnen</span>{% endif %}
+              <span class="price-pill"><strong>{{ b.prijs_totaal_mooi }}</strong>{% if b.prijs_label_kort %}<span class="price-gap">&nbsp;</span><small>{{ b.prijs_label_kort }}</small>{% endif %}</span>
             </p>
           </div>
         </div>

@@ -1,14 +1,16 @@
 
 {% extends "base.html" %}
 {% block content %}
-<header class="hero">
-  <div>
+<header class="hero agenda-hero">
+  <div class="hero-title">
     <h1>Eieragenda</h1>
   </div>
+  <button class="fab" onclick="openOrderModal()">+</button>
   <div class="hero-actions">
     <a class="hero-link" href="{{ app_url('geschiedenis') }}">Geschiedenis</a>
     <a class="hero-link" href="{{ app_url('klanten') }}">Klanten</a>
-    <button class="fab" onclick="openOrderModal()">+</button>
+    <a class="hero-link" href="{{ app_url('prijzen') }}">Prijzen</a>
+    <a class="hero-link" href="{{ app_url('totalen') }}">Totalen</a>
   </div>
 </header>
 
@@ -25,7 +27,7 @@
           <div class="{% if day.remaining.dubbeldooiers == 0 %}zero-total{% endif %}"><span>Dubbel</span><strong>{{ day.remaining.dubbeldooiers }}</strong>{% if day.remaining.dubbeldooiers_stack %}<small>{{ day.remaining.dubbeldooiers_stack }}</small>{% endif %}</div>
         </div>
       </div>
-      <span class="day-count">{{ day.remaining.aantal }} open</span>
+      <span class="day-count"><span>{{ day.remaining.aantal }} open</span> <small>{{ day.remaining.prijs_mooi }}</small></span>
     </div>
 
     <div class="order-list inside-day">
@@ -44,11 +46,13 @@
               </div>
               <a href="{{ app_url('bestelling_bewerken', id=b.id) }}" class="tiny-link">Bewerk</a>
             </div>
-            <p>
+            <p class="payment-line">
               {% if b.factuur %}<span class="pay pay-mail">Factuur mailen</span>{% endif %}
-              {% if b.factuur_meegeven %}{% if b.factuur %} · {% endif %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
-              {% if b.contant %}{% if b.factuur or b.factuur_meegeven %} · {% endif %}<span class="pay pay-cash">Contant</span>{% endif %}
-              {% if b.pinnen %}{% if b.factuur or b.factuur_meegeven or b.contant %} · {% endif %}<span class="pay pay-card">Pinnen</span>{% endif %}
+              {% if b.factuur_meegeven %}<span class="pay pay-paper">Factuur meegeven</span>{% endif %}
+              {% if b.contant %}<span class="pay pay-cash">Contant</span>{% endif %}
+              {% if b.contant and b.pinnen %}<span class="pay-or">of</span>{% endif %}
+              {% if b.pinnen %}<span class="pay pay-card">Pinnen</span>{% endif %}
+              <span class="price-pill"><strong>{{ b.prijs_totaal_mooi }}</strong>{% if b.prijs_label_kort %}<span class="price-gap">&nbsp;</span><small>{{ b.prijs_label_kort }}</small>{% endif %}</span>
             </p>
           </div>
         </div>
@@ -130,33 +134,60 @@
         </div>
       </section>
 
-      <section class="form-bubble">
-        
-        <div class="form-block"><label>Datum</label><input type="date" name="ophaal_datum" value="{{ today }}" min="{{ today }}"></div>
-        <div class="form-block">
-          <label>Tijd</label>
-          <div class="choice-row time-choice three-choices">
-            <label><input type="radio" name="tijd_type" value="none" checked onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
-            <label><input type="radio" name="tijd_type" value="exact" onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
-            <label><input type="radio" name="tijd_type" value="range" onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+      <section class="form-bubble price-mode-section">
+        <h3>Prijs</h3>
+        <div class="price-direct-box">
+          <label class="invoice-toggle fixed-price-toggle-row">
+            <input type="checkbox" name="vaste_prijs_actief" class="price-direct-toggle" onclick="eieragendaSyncFixedPrice(this.form)" onchange="eieragendaSyncFixedPrice(this.form)">
+            <span>Vaste prijs per ei</span>
+          </label>
+          <div class="form-block price-direct-panel">
+            <label>Vaste prijs per ei (€)</label>
+            <input type="text" name="vaste_prijs_per_ei" inputmode="decimal" placeholder="Bijv. 0,20" onfocus="this.select()" oninput="this.value=this.value.replace(/[^0-9,.]/g,'')">
           </div>
         </div>
-        <div class="time-panel time-exact hidden"><label>Exacte tijd</label><input type="time" name="tijd_van"></div>
-        <div class="time-panel time-range hidden"><div class="form-grid two"><div><label>Vanaf</label><input type="time" name="tijd_van_range"></div><div><label>Tot</label><input type="time" name="tijd_tot_range"></div></div></div>
+        <small class="price-help">Automatisch volgens eierprijs lijst</small>
+        <div class="order-price-preview">
+          <span>Totaal te betalen</span>
+          <strong class="order-price-total">€ 0,00</strong>
+        </div>
       </section>
 
       <section class="form-bubble">
-        
+        <h3>Betaling</h3>
         <div class="form-block">
-      <label>Betaling</label>
-      <div class="form-grid two payment-grid">
-        <label class="invoice-toggle"><input type="checkbox" name="factuur"><span>Factuur mailen</span></label>
-        <label class="invoice-toggle"><input type="checkbox" name="factuur_meegeven"><span>Factuur meegeven</span></label>
-        <label class="invoice-toggle"><input type="checkbox" name="contant"><span>Contant</span></label>
-        <label class="invoice-toggle"><input type="checkbox" name="pinnen"><span>Pinnen</span></label>
-      </div>
-    </div>
-        <div class="form-block"><label>Opmerking</label><input name="opmerking" placeholder=""></div>
+          <div class="form-grid two payment-grid">
+            <label class="invoice-toggle"><input type="checkbox" name="factuur"><span>Factuur mailen</span></label>
+            <label class="invoice-toggle"><input type="checkbox" name="factuur_meegeven"><span>Factuur meegeven</span></label>
+            <label class="invoice-toggle"><input type="checkbox" name="contant"><span>Contant</span></label>
+            <label class="invoice-toggle"><input type="checkbox" name="pinnen"><span>Pinnen</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-bubble">
+        <h3>Datum en tijd</h3>
+        <div class="date-time-grid">
+          <div class="form-block">
+            <label>Datum</label>
+            <input type="date" name="ophaal_datum" value="{{ today }}" min="{{ today }}" aria-label="Datum">
+          </div>
+          <div class="form-block">
+            <label>Tijd</label>
+            <div class="choice-row time-choice three-choices">
+              <label><input type="radio" name="tijd_type" value="none" checked onchange="updateTimeMode(this.form)"><span>Niet opgegeven</span></label>
+              <label><input type="radio" name="tijd_type" value="exact" onchange="updateTimeMode(this.form)"><span>Exacte tijd</span></label>
+              <label><input type="radio" name="tijd_type" value="range" onchange="updateTimeMode(this.form)"><span>Tussen</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="time-panel time-exact hidden"><input type="time" name="tijd_van" aria-label="Exacte tijd"></div>
+        <div class="time-panel time-range hidden"><div class="form-grid two"><div><input type="time" name="tijd_van_range" aria-label="Vanaf"></div><div><input type="time" name="tijd_tot_range" aria-label="Tot"></div></div></div>
+      </section>
+
+      <section class="form-bubble">
+        <h3>Opmerking</h3>
+        <div class="form-block"><input name="opmerking" placeholder="Opmerking" aria-label="Opmerking"></div>
       </section>
 
       <button class="primary" type="submit">Bestelling plaatsen</button>

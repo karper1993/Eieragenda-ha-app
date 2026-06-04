@@ -5,8 +5,12 @@ function appPath(path) {
 }
 
 function openOrderModal() {
-  resetOrderForm();
+  resetOrderForm(true);
   openModal('orderModal');
+  // Mobiele HA WebView kan nog een oude prijs-preview tonen nadat de modal opent.
+  // Daarom na openen nogmaals hard op nul zetten.
+  setTimeout(() => resetOrderForm(true), 60);
+  setTimeout(() => forceOrderPriceZero(document.querySelector('#orderModal form')), 250);
 }
 function openModal(id) {
   document.getElementById(id).classList.add('open');
@@ -18,6 +22,9 @@ function openModal(id) {
 function closeModal(id, fromPopstate = false) {
   document.getElementById(id).classList.remove('open');
   document.body.classList.remove('modal-open');
+  if (id === 'orderModal') {
+    setTimeout(resetOrderForm, 0);
+  }
   if (!fromPopstate && history.state && history.state.modal === id) {
     history.back();
   }
@@ -62,6 +69,25 @@ function normalizeTimeFields(form) {
     hiddenTo.value = '';
   }
 }
+function getPriceType(form) {
+  if (!form) return 'lijst';
+  const chk = form.querySelector('input[name="vaste_prijs_actief"]');
+  if (chk) return chk.checked ? 'vast' : 'lijst';
+  const select = form.querySelector('select[name="prijs_type"]');
+  if (select) return select.value || 'lijst';
+  return form.querySelector('input[name="prijs_type"]:checked')?.value || 'lijst';
+}
+function setPriceType(form, value) {
+  if (!form) return;
+  const fixed = (value || 'lijst') === 'vast';
+  const chk = form.querySelector('input[name="vaste_prijs_actief"]');
+  if (chk) chk.checked = fixed;
+  const select = form.querySelector('select[name="prijs_type"]');
+  if (select) select.value = value || 'lijst';
+  const radio = form.querySelector('input[name="prijs_type"][value="' + (value || 'lijst') + '"]');
+  if (radio) radio.checked = true;
+  updatePriceMode(form);
+}
 function validateOrderForm(form) {
   normalizeTimeFields(form);
   const klant = form.querySelector('select[name="klant_id"]')?.value || '';
@@ -79,6 +105,14 @@ function validateOrderForm(form) {
   }
   if ((s1 + s2 + dd) <= 0) {
     showMessage('Niet alle velden ingevuld: vul minimaal één aantal eieren in.');
+    return false;
+  }
+  const prijsType = getPriceType(form);
+  const fixed = prijsType === 'vast';
+  const fixedPriceRaw = form.querySelector('input[name="vaste_prijs_per_ei"]')?.value || '';
+  const fixedPrice = Number(fixedPriceRaw.replace(',', '.'));
+  if (fixed && (!fixedPrice || fixedPrice <= 0)) {
+    showMessage('Vul een vaste prijs per ei in, of zet vaste prijs uit.');
     return false;
   }
   return true;
@@ -104,6 +138,45 @@ function updateStacks(input) {
   const label = input.closest('.form-block')?.querySelector('.stack-label');
   if (label) label.textContent = stackText(input.value);
 }
+function updatePriceMode(form) {
+  if (!form) return;
+  const chk = form.querySelector('input[name="vaste_prijs_actief"], .price-direct-toggle');
+  const select = form.querySelector('select[name="prijs_type"]');
+  const radioVast = form.querySelector('input[name="prijs_type"][value="vast"]');
+  const wrapper = form.querySelector('.price-direct-box, .fixed-price-native');
+  const panel = form.querySelector('.price-direct-panel, .fixed-price-panel');
+  const input = form.querySelector('input[name="vaste_prijs_per_ei"]');
+
+  const active = !!(
+    (chk && chk.checked) ||
+    (select && select.value === 'vast') ||
+    (radioVast && radioVast.checked)
+  );
+
+  if (wrapper) wrapper.classList.toggle('is-fixed', active);
+
+  if (panel) {
+    panel.hidden = false;
+    panel.style.display = active ? 'grid' : 'none';
+    panel.classList.toggle('is-visible', active);
+  }
+
+  if (input) {
+    input.disabled = !active;
+    input.readOnly = false;
+    // Niet automatisch focussen op mobiel: dat opent het toetsenbord en laat de pagina springen.
+  }
+  if (typeof window.eieragendaSyncFixedPrice === 'function') window.eieragendaSyncFixedPrice(form);
+}
+
+function toggleFixedPrice(button) {
+  const form = button.closest('form');
+  if (!form) return;
+  const current = getPriceType(form);
+  const next = current === 'vast' ? 'lijst' : 'vast';
+  setPriceType(form, next);
+  updatePriceMode(form);
+}
 async function toggleProcessed(id, btn) {
   const res = await fetch(appPath(`/bestelling/${id}/toggle/verwerkt`), { method: 'POST' });
   if (!res.ok) return;
@@ -127,6 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('select[name="klant_id"]').forEach(toggleNewCustomer);
   document.querySelectorAll('.order-form').forEach(updateTimeMode);
   document.querySelectorAll('.egg-input').forEach(updateStacks);
+  document.querySelectorAll('.order-form').forEach(updatePriceMode);
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -319,7 +393,7 @@ async function updateLastOrderPreview(select) {
   if (!klantId || klantId === '__new__') return;
 
   try {
-    const res = await fetch('api/klant/' + klantId + '/laatste-bestelling', { cache: 'no-store' });
+    const res = await fetch(appPath('/api/klant/' + klantId + '/laatste-bestelling'), { cache: 'no-store' });
     const data = await res.json();
     if (!data.ok) return;
 
@@ -332,6 +406,11 @@ async function updateLastOrderPreview(select) {
 function setChecked(form, name, value) {
   const el = form.querySelector('input[name="' + name + '"]');
   if (el) el.checked = !!value;
+}
+
+function setRadio(form, name, value) {
+  const el = form.querySelector('input[name="' + name + '"][value="' + value + '"]');
+  if (el) el.checked = true;
 }
 
 function repeatLastOrder(btn) {
@@ -352,6 +431,11 @@ function repeatLastOrder(btn) {
   setChecked(form, 'factuur_meegeven', data.factuur_meegeven);
   setChecked(form, 'pinnen', data.pinnen);
   setChecked(form, 'contant', data.contant);
+  setPriceType(form, data.vaste_prijs_actief ? 'vast' : 'lijst');
+  setChecked(form, 'vaste_prijs_actief', data.vaste_prijs_actief);
+  const fixedPrice = form.querySelector('input[name="vaste_prijs_per_ei"]');
+  if (fixedPrice) fixedPrice.value = data.vaste_prijs_actief ? String(data.vaste_prijs_per_ei || '').replace('.', ',') : '';
+  updatePriceMode(form);
 
   const opm = form.querySelector('input[name="opmerking"], textarea[name="opmerking"]');
   if (opm) opm.value = data.opmerking || '';
@@ -386,11 +470,30 @@ document.addEventListener('change', (e) => {
 });
 
 
-function resetOrderForm() {
+
+function forceOrderPriceZero(form) {
+  if (!form) return;
+  // Alleen bij nieuwe bestelling: als alle aantallen nul zijn, mag de preview nooit een oud bedrag tonen.
+  const s1 = Number(form.querySelector('input[name="soort1"]')?.value || 0);
+  const s2 = Number(form.querySelector('input[name="soort2"]')?.value || 0);
+  const dd = Number(form.querySelector('input[name="dubbeldooiers"]')?.value || 0);
+  if ((s1 + s2 + dd) === 0) {
+    form.dataset.priceSeq = String((Number(form.dataset.priceSeq || 0) + 1000));
+    const totalEl = form.querySelector('.order-price-total');
+    const labelEl = form.querySelector('.order-price-label');
+    if (totalEl) totalEl.textContent = '€ 0,00';
+    if (labelEl) labelEl.textContent = '';
+  }
+}
+
+function resetOrderForm(forceZero = false) {
   const modal = document.getElementById('orderModal');
   if (!modal) return;
   const form = modal.querySelector('form');
   if (!form) return;
+
+  form.dataset.priceSeq = String((Number(form.dataset.priceSeq || 0) + 1000));
+  form.dataset.resettingNewOrder = '1';
 
   form.reset();
 
@@ -424,6 +527,18 @@ function resetOrderForm() {
   form.querySelectorAll('.payment-grid input[type="checkbox"], .invoice-toggle input[type="checkbox"]').forEach(chk => {
     chk.checked = false;
   });
+  setPriceType(form, 'lijst');
+  const fixedPrice = form.querySelector('input[name="vaste_prijs_per_ei"]');
+  if (fixedPrice) fixedPrice.value = '';
+  const totalEl = form.querySelector('.order-price-total');
+  if (totalEl) totalEl.textContent = '€ 0,00';
+  const labelEl = form.querySelector('.order-price-label');
+  if (labelEl) labelEl.textContent = '';
+  updatePriceMode(form);
+  if (forceZero) forceOrderPriceZero(form);
+  if (typeof window.eieragendaOrderPriceUpdate === 'function') window.eieragendaOrderPriceUpdate(form);
+  forceOrderPriceZero(form);
+  setTimeout(() => { forceOrderPriceZero(form); form.dataset.resettingNewOrder = ''; }, 120);
 
   updateTimeMode(form);
 }
@@ -451,3 +566,73 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, 800);
 });
+
+// v21: vaste prijs paneel wordt geforceerd verborgen/getoond met inline style voor mobiele HA WebView
+function syncAllPricePanels() {
+  document.querySelectorAll('.order-form').forEach(updatePriceMode);
+}
+document.addEventListener('change', (e) => {
+  if (e.target && (e.target.matches('input[name="vaste_prijs_actief"]') || e.target.matches('input[name="prijs_type"]') || e.target.matches('select[name="prijs_type"]'))) {
+    updatePriceMode(e.target.closest('form'));
+  }
+});
+document.addEventListener('click', (e) => {
+  const fixed = e.target && e.target.closest('input[name="vaste_prijs_actief"], .fixed-price-toggle-row');
+  if (fixed) {
+    setTimeout(() => updatePriceMode(fixed.closest('form')), 0);
+    setTimeout(() => updatePriceMode(fixed.closest('form')), 120);
+  }
+});
+document.addEventListener('click', (e) => {
+  const toggle = e.target && e.target.closest('.price-choice label');
+  if (toggle) {
+    setTimeout(() => updatePriceMode(toggle.closest('form')), 0);
+  }
+});
+document.addEventListener('DOMContentLoaded', syncAllPricePanels);
+
+
+// v16: Prijzen-pagina automatisch berekenen zonder knop
+function setupPriceCalculator() {
+  const form = document.getElementById('priceCalcForm');
+  if (!form) return;
+  const inputs = Array.from(form.querySelectorAll('.price-calc-input'));
+  const totalEl = document.getElementById('priceResultTotal');
+  const detailsEl = document.getElementById('priceResultDetails');
+  let timer = null;
+
+  async function calculateNow() {
+    const params = new URLSearchParams();
+    inputs.forEach(input => params.set(input.name, input.value || '0'));
+    try {
+      const res = await fetch(appPath('/api/prijzen/bereken') + '?' + params.toString(), { cache: 'no-store' });
+      const data = await res.json();
+      if (!data.ok) return;
+      if (totalEl) totalEl.textContent = data.total_mooi || '€ 0,00';
+      if (detailsEl) {
+        detailsEl.innerHTML = '';
+        (data.details || []).forEach(d => {
+          const item = document.createElement('div');
+          item.className = 'price-result-item';
+          item.innerHTML = '<span></span><strong></strong><small></small>';
+          item.querySelector('span').textContent = d.label || '';
+          item.querySelector('strong').textContent = d.aantal || 0;
+          item.querySelector('small').textContent = (d.prijs_mooi || '€ 0,00') + ' · ' + (d.prijs_per_stuk_mooi || '€ 0,000') + '/ei';
+          detailsEl.appendChild(item);
+        });
+      }
+    } catch (e) {}
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(calculateNow, 180);
+  }
+
+  inputs.forEach(input => {
+    input.addEventListener('input', schedule);
+    input.addEventListener('focus', () => selectAllOnFocus(input));
+  });
+  calculateNow();
+}
+document.addEventListener('DOMContentLoaded', setupPriceCalculator);

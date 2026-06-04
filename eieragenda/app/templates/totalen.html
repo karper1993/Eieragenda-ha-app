@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero small">
+  <div>
+    <h1>Totalen</h1>
+    <p>{{ status_label }} · {{ periode_label }}</p>
+  </div>
+  <a class="hero-link" href="{{ app_url('index') }}">Terug</a>
+</header>
+
+<section class="edit-card totals-filter-card">
+  <form method="get" class="totals-filter-form">
+    <div class="form-block">
+      <label>Periode</label>
+      <select name="periode" onchange="this.form.submit()">
+        <option value="dag" {% if periode == 'dag' %}selected{% endif %}>Per dag</option>
+        <option value="week" {% if periode == 'week' %}selected{% endif %}>Per week</option>
+        <option value="maand" {% if periode == 'maand' %}selected{% endif %}>Per maand</option>
+        <option value="jaar" {% if periode == 'jaar' %}selected{% endif %}>Per jaar</option>
+      </select>
+    </div>
+    <div class="form-block">
+      <label>Status</label>
+      <select name="status" onchange="this.form.submit()">
+        <option value="voltooid" {% if status == 'voltooid' %}selected{% endif %}>Alleen voltooid</option>
+        <option value="open" {% if status == 'open' %}selected{% endif %}>Alleen open</option>
+        <option value="alles" {% if status == 'alles' %}selected{% endif %}>Alles</option>
+      </select>
+    </div>
+    <div class="form-block">
+      <label>Vanaf</label>
+      <input type="date" name="vanaf" value="{{ vanaf }}">
+    </div>
+    <div class="form-block">
+      <label>Tot en met</label>
+      <input type="date" name="tot" value="{{ tot }}">
+    </div>
+    <button class="primary" type="submit">Toepassen</button>
+    {% if vanaf or tot or periode != 'dag' or status != 'voltooid' %}
+      <a class="secondary as-link" href="{{ app_url('totalen') }}">Reset</a>
+    {% endif %}
+  </form>
+</section>
+
+<section class="totals-summary edit-card">
+  <div class="total-summary-main">
+    <span>Totaal bedrag</span>
+    <strong>{{ summary.bedrag_mooi }}</strong>
+    <small>{{ summary.bestellingen }} bestellingen · {{ summary.klanten_aantal }} klanten</small>
+  </div>
+  <div class="total-summary-grid">
+    <div><span>Totaal eieren</span><strong>{{ summary.eieren }}</strong></div>
+    <div class="amount-soort1"><span>1e soort</span><strong>{{ summary.soort1 }}</strong>{% if summary.soort1_stack %}<small>{{ summary.soort1_stack }}</small>{% endif %}</div>
+    <div class="amount-soort2"><span>2e soort</span><strong>{{ summary.soort2 }}</strong>{% if summary.soort2_stack %}<small>{{ summary.soort2_stack }}</small>{% endif %}</div>
+    <div class="amount-dubbel"><span>Dubbel</span><strong>{{ summary.dubbeldooiers }}</strong>{% if summary.dubbeldooiers_stack %}<small>{{ summary.dubbeldooiers_stack }}</small>{% endif %}</div>
+  </div>
+</section>
+
+{% if groups %}
+<section class="timeline totals-timeline">
+  {% for g in groups %}
+  <section class="day-bubble total-period-bubble">
+    <div class="day-header total-period-header">
+      <div class="day-title-block">
+        <h2>{{ g.label }}</h2>
+        {% if g.sub %}<p class="total-period-sub">{{ g.sub }}</p>{% endif %}
+      </div>
+      <span class="day-count">{{ g.bedrag_mooi }}</span>
+    </div>
+    <div class="total-period-grid">
+      <div><span>Bestellingen</span><strong>{{ g.bestellingen }}</strong><small>{{ g.klanten_aantal }} klanten</small></div>
+      <div><span>Totaal eieren</span><strong>{{ g.eieren }}</strong></div>
+      <div class="amount-soort1"><span>1e soort</span><strong>{{ g.soort1 }}</strong>{% if g.soort1_stack %}<small>{{ g.soort1_stack }}</small>{% endif %}</div>
+      <div class="amount-soort2"><span>2e soort</span><strong>{{ g.soort2 }}</strong>{% if g.soort2_stack %}<small>{{ g.soort2_stack }}</small>{% endif %}</div>
+      <div class="amount-dubbel"><span>Dubbel</span><strong>{{ g.dubbeldooiers }}</strong>{% if g.dubbeldooiers_stack %}<small>{{ g.dubbeldooiers_stack }}</small>{% endif %}</div>
+    </div>
+  </section>
+  {% endfor %}
+</section>
+{% else %}
+<article class="empty-state">
+  <div>📊</div>
+  <h3>Geen totalen gevonden</h3>
+  <p>Voor deze filter zijn er nog geen bestellingen.</p>
+</article>
+{% endif %}
+{% endblock %}
